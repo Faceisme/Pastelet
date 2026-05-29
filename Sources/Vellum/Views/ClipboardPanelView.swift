@@ -78,7 +78,11 @@ struct ClipboardPanelView: View {
                 ClipboardSourceOption(
                     name: name,
                     bundleID: item.sourceBundleIdentifier,
-                    icon: item.sourceIcon
+                    // 预缩成 18pt 小图并缓存：避免过滤弹窗每次开窗实时缩放整张 App 大图而掉帧
+                    icon: AppIconThumbnailCache.thumbnail(
+                        for: item.sourceIcon,
+                        key: item.sourceBundleIdentifier ?? name
+                    )
                 )
             )
         }

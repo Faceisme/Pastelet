@@ -35,9 +35,9 @@ struct SearchToolbarClusterView: View {
     }
 
     /// 无回弹的平滑曲线，比带弹性的 spring 更「丝滑」，贴合画卷横向铺开的观感。
-    /// 时长在原 0.34 基础上提速约 30%（0.34 × 0.7 ≈ 0.24），手感更利落。
+    /// 时长经两次提速：0.34 → 0.24（-30%）→ 0.19（再 -20%，0.24 × 0.8），手感更利落。
     private var expandAnimation: Animation {
-        .smooth(duration: 0.24)
+        .smooth(duration: 0.19)
     }
 
     var body: some View {
@@ -281,6 +281,55 @@ struct ClipboardSourceOption: Identifiable, Equatable {
     }
 }
 
+/// App 图标缩略图缓存。
+///
+/// `NSRunningApplication.icon` 是含大尺寸表示的多分辨率图标，直接在过滤弹窗里缩到 18pt
+/// 会在开窗动画那几帧实时缩放十几张大图、掉帧。这里按 key 预缩成一张 18pt 小位图并缓存，
+/// 每个 App 只缩一次，弹窗只需画现成的小图。仅在主线程使用。
+@MainActor
+enum AppIconThumbnailCache {
+    private static var cache: [String: NSImage] = [:]
+
+    static func thumbnail(for icon: NSImage?, key: String, side: CGFloat = 18) -> NSImage? {
+        guard let icon else { return nil }
+        if let cached = cache[key] { return cached }
+
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+        let pixels = max(1, Int((side * scale).rounded()))
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: pixels,
+            pixelsHigh: pixels,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            return icon
+        }
+        rep.size = NSSize(width: side, height: side)
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSGraphicsContext.current?.imageInterpolation = .high
+        icon.draw(
+            in: NSRect(x: 0, y: 0, width: side, height: side),
+            from: .zero,
+            operation: .copy,
+            fraction: 1
+        )
+        NSGraphicsContext.restoreGraphicsState()
+
+        let thumb = NSImage(size: NSSize(width: side, height: side))
+        thumb.addRepresentation(rep)
+        cache[key] = thumb
+        return thumb
+    }
+}
+
 // MARK: - 过滤菜单弹层（类型 / 应用）
 
 private struct SourceFilterMenu: View {
@@ -404,9 +453,9 @@ private struct FilterPill: View {
     @ViewBuilder
     private var iconView: some View {
         if let icon {
+            // 图标已在 AppIconThumbnailCache 预缩到 18pt，这里按原尺寸画即可，无需再插值缩放
             Image(nsImage: icon)
                 .resizable()
-                .interpolation(.high)
                 .scaledToFit()
         } else {
             Image(systemName: symbol)
