@@ -70,7 +70,7 @@ struct ClipboardCardView: View {
 
     private var cardWidth: CGFloat { 232 }
     private var cardHeight: CGFloat { 234 }
-    private var cardCornerRadius: CGFloat { 17 }
+    private var cardCornerRadius: CGFloat { 13 }
     private var headerHeight: CGFloat { 52 }
     private var contentInset: CGFloat { 14 }
 
