@@ -22,58 +22,33 @@ struct SettingsView: View {
     @State private var selected: SettingsSection = .general
 
     var body: some View {
-        ZStack {
-            Color(nsColor: .windowBackgroundColor)
+        HStack(spacing: 0) {
+            sidebar
 
-            HStack(spacing: 0) {
-                sidebar
-                    .padding(.leading, 14)
-                    .padding(.vertical, 18)
+            VStack(alignment: .leading, spacing: 20) {
+                Text(selected.rawValue)
+                    .font(.system(size: 22, weight: .bold))
+                    .padding(.top, 52)
 
-                Spacer()
-                    .frame(width: 34)
-
-                VStack(alignment: .leading, spacing: 20) {
-                    Text(selected.rawValue)
-                        .font(.system(size: 23, weight: .bold))
-                        .padding(.top, 52)
-
-                    content
-                }
-                .padding(.trailing, 28)
-                .padding(.bottom, 34)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                content
             }
+            .padding(.leading, 34)
+            .padding(.trailing, 28)
+            .padding(.bottom, 34)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color(nsColor: .windowBackgroundColor))
         }
-        .frame(width: 720, height: 700)
+        .frame(width: 720, height: 640)
     }
 
     private var sidebar: some View {
         ZStack {
             GlassEffectView(
-                cornerRadius: 28,
-                tintColor: NSColor.windowBackgroundColor.withAlphaComponent(0.74),
+                cornerRadius: 0,
+                tintColor: NSColor.windowBackgroundColor.withAlphaComponent(0.18),
                 style: .regular
             )
-            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-            .overlay {
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.28),
-                        Color(nsColor: .controlColor).opacity(0.18),
-                        Color.white.opacity(0.10)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(.white.opacity(0.34), lineWidth: 0.8)
-            }
-            .shadow(color: .black.opacity(0.08), radius: 20, x: 0, y: 8)
-            .shadow(color: .black.opacity(0.04), radius: 5, x: 1, y: 1)
+            .ignoresSafeArea(.container, edges: [.top, .bottom, .leading])
 
             VStack(alignment: .leading, spacing: 0) {
                 Spacer()
@@ -93,10 +68,11 @@ struct SettingsView: View {
 
                 Spacer()
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 12)
         }
-        .frame(width: 200)
+        .frame(width: 214)
         .frame(maxHeight: .infinity)
+        .ignoresSafeArea(.container, edges: [.top, .bottom, .leading])
     }
 
     @ViewBuilder

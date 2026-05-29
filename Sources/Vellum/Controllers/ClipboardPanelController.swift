@@ -36,21 +36,16 @@ final class ClipboardPanelController {
         let panel = panel ?? makePanel()
         self.panel = panel
 
-        let finalFrame = frameForPanel()
-        var startFrame = finalFrame
-        startFrame.origin.y -= 28
-
-        panel.setFrame(startFrame, display: true)
+        // 不动画 window.frame（会触发内部反复重排，是入场卡顿主因）；只做轻量淡入。
+        panel.setFrame(frameForPanel(), display: true)
         panel.alphaValue = 0
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         installEventMonitors()
 
-        // Paste 风格的底部浮现：稍慢一点，减少顿挫感。
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.38
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.18, 0.82, 0.22, 1.0)
-            panel.animator().setFrame(finalFrame, display: true)
+            context.duration = 0.18
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 1
         }
     }
@@ -60,13 +55,9 @@ final class ClipboardPanelController {
 
         removeEventMonitors()
 
-        var targetFrame = panel.frame
-        targetFrame.origin.y -= 24
-
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.22
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.32, 0.0, 0.68, 1.0)
-            panel.animator().setFrame(targetFrame, display: true)
+            context.duration = 0.13
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0
         } completionHandler: {
             Task { @MainActor in
@@ -150,7 +141,7 @@ final class ClipboardPanelController {
         panel.contentView = NSHostingView(rootView: content)
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        panel.hasShadow = false
+        panel.hasShadow = true   // 交给系统画圆角阴影（跟随内容形状，高效）
         panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         panel.isReleasedWhenClosed = false

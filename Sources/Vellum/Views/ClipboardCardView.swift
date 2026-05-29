@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ClipboardCardView: View {
@@ -39,6 +40,7 @@ struct ClipboardCardView: View {
                         lineWidth: highlighted ? 2.5 : 0.8
                     )
             }
+            .compositingGroup()
             .shadow(color: .black.opacity(highlighted ? 0.12 : 0.07), radius: highlighted ? 8 : 4, x: 0, y: highlighted ? 4 : 2)
         }
         .buttonStyle(VellumPressButtonStyle(pressedScale: 0.98, pressedOpacity: 0.96))
@@ -423,28 +425,24 @@ struct ClipboardCardView: View {
 // MARK: - Checkerboard
 
 private struct CheckerboardBackground: View {
-    var square: CGFloat = 8
-    var light = Color(white: 0.96)
-    var dark = Color(white: 0.85)
-
     var body: some View {
-        Canvas { context, size in
-            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(light))
-
-            let cols = Int(ceil(size.width / square))
-            let rows = Int(ceil(size.height / square))
-            for row in 0..<max(rows, 0) {
-                for col in 0..<max(cols, 0) where (row + col).isMultiple(of: 2) {
-                    let rect = CGRect(
-                        x: CGFloat(col) * square,
-                        y: CGFloat(row) * square,
-                        width: square,
-                        height: square
-                    )
-                    context.fill(Path(rect), with: .color(dark))
-                }
-            }
-        }
-        .drawingGroup()
+        Image(nsImage: Self.tile)
+            .resizable(resizingMode: .tile)
+            .accessibilityHidden(true)
     }
+
+    /// 一次性生成的 2×2 棋盘 tile，平铺复用 —— 避免每帧 Canvas 重绘 + 离屏渲染。
+    private static let tile: NSImage = {
+        let unit: CGFloat = 8
+        let size = NSSize(width: unit * 2, height: unit * 2)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor(white: 0.96, alpha: 1).setFill()
+        NSRect(origin: .zero, size: size).fill()
+        NSColor(white: 0.85, alpha: 1).setFill()
+        NSRect(x: 0, y: unit, width: unit, height: unit).fill()
+        NSRect(x: unit, y: 0, width: unit, height: unit).fill()
+        image.unlockFocus()
+        return image
+    }()
 }

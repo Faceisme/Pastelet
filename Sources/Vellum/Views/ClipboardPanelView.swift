@@ -60,32 +60,26 @@ struct ClipboardPanelView: View {
 
     var body: some View {
         ZStack {
-            // Soft floating shadow (panel window draws no shadow itself)
-            RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous)
-                .fill(.black.opacity(0.22))
-                .blur(radius: 26)
-                .offset(y: 6)
-                .padding(.horizontal, 10)
-                .padding(.bottom, 4)
-
             // macOS 26 Liquid Glass — 保留通透感，同时提高底板不透明度。
+            // 阴影改用原生 .shadow()（GPU 优化），不再用全屏 .blur 矩形（入场每帧重算高斯模糊会卡）。
             GlassEffectView(
                 cornerRadius: panelCornerRadius,
                 tintColor: NSColor.windowBackgroundColor.withAlphaComponent(0.66),
                 style: .clear
             )
             .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: [.white.opacity(0.55), .white.opacity(0.10)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 1
-                        )
-                }
+            .overlay {
+                RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [.white.opacity(0.55), .white.opacity(0.10)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
+            }
+            // 阴影交给 NSWindow 系统阴影（hasShadow=true），不在 SwiftUI 自绘
 
             VStack(spacing: 0) {
                 toolbar

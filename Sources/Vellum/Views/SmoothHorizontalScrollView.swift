@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 
+/// 横向滚动容器：鼠标滚轮（纵向）也能横向滚动 + 平滑动画 + 键盘定位。
 struct SmoothHorizontalScrollView<Content: View>: NSViewRepresentable {
     let selectedIndex: Int
     let scrollRequest: Int
@@ -22,9 +23,7 @@ struct SmoothHorizontalScrollView<Content: View>: NSViewRepresentable {
         self.content = content()
     }
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
+    func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> VellumSmoothScrollView {
         let scrollView = VellumSmoothScrollView()
@@ -35,6 +34,7 @@ struct SmoothHorizontalScrollView<Content: View>: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.scrollerStyle = .overlay
         scrollView.allowsMagnification = false
+        scrollView.verticalScrollElasticity = .none
 
         let hostingView = NSHostingView(rootView: content)
         hostingView.frame = NSRect(origin: .zero, size: hostingView.fittingSize)
@@ -73,23 +73,51 @@ struct SmoothHorizontalScrollView<Content: View>: NSViewRepresentable {
 }
 
 final class VellumSmoothScrollView: NSScrollView {
+    private var targetX: CGFloat = 0
+    private var isAnimatingWheel = false
+
     override func scrollWheel(with event: NSEvent) {
         guard let documentView else {
             super.scrollWheel(with: event)
             return
         }
 
-        let horizontal = event.scrollingDeltaX
-        let vertical = event.scrollingDeltaY
-        let delta = abs(horizontal) > abs(vertical) ? horizontal : vertical
-        guard abs(delta) > 0 else { return }
-
-        let multiplier: CGFloat = event.hasPreciseScrollingDeltas ? 6.0 : 72
-        let currentX = contentView.bounds.origin.x
         let maxX = max(0, documentView.frame.width - contentView.bounds.width)
-        let targetX = min(max(0, currentX - delta * multiplier), maxX)
+        guard maxX > 0 else { return }
 
-        contentView.setBoundsOrigin(NSPoint(x: targetX, y: 0))
+        let deltaX = event.scrollingDeltaX
+        let deltaY = event.scrollingDeltaY
+        let delta = abs(deltaX) >= abs(deltaY) ? deltaX : deltaY
+        guard delta != 0 else { return }
+
+        if event.hasPreciseScrollingDeltas {
+            // 触摸板：直接跟手（系统本身已平滑）
+            let x = min(max(0, contentView.bounds.origin.x - delta), maxX)
+            contentView.setBoundsOrigin(NSPoint(x: x, y: 0))
+            reflectScrolledClipView(contentView)
+            targetX = x
+        } else {
+            // 鼠标滚轮：每格固定步长累加，动画平滑滑过去
+            let base = isAnimatingWheel ? targetX : contentView.bounds.origin.x
+            let step: CGFloat = 90
+            targetX = min(max(0, base - (delta > 0 ? step : -step)), maxX)
+            animateWheelScroll()
+        }
+    }
+
+    private func animateWheelScroll() {
+        isAnimatingWheel = true
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.20
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            contentView.animator().setBoundsOrigin(NSPoint(x: targetX, y: 0))
+        } completionHandler: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.isAnimatingWheel = false
+                self.reflectScrolledClipView(self.contentView)
+            }
+        }
         reflectScrolledClipView(contentView)
     }
 
@@ -105,21 +133,23 @@ final class VellumSmoothScrollView: NSScrollView {
         let itemStride = itemWidth + spacing
         let itemMidX = CGFloat(index) * itemStride + itemWidth / 2 + 26
         let maxX = max(0, documentView.frame.width - visibleWidth)
-        let targetX = min(max(0, itemMidX - visibleWidth / 2), maxX)
-        let target = NSPoint(x: targetX, y: 0)
+        let target = min(max(0, itemMidX - visibleWidth / 2), maxX)
+        targetX = target
+        let origin = NSPoint(x: target, y: 0)
 
         if animated {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.24
                 context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.92, 0.20, 1)
-                contentView.animator().setBoundsOrigin(target)
-            } completionHandler: {
+                contentView.animator().setBoundsOrigin(origin)
+            } completionHandler: { [weak self] in
                 Task { @MainActor in
+                    guard let self else { return }
                     self.reflectScrolledClipView(self.contentView)
                 }
             }
         } else {
-            contentView.setBoundsOrigin(target)
+            contentView.setBoundsOrigin(origin)
             reflectScrolledClipView(contentView)
         }
     }
