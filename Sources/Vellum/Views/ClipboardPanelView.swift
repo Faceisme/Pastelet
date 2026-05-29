@@ -30,15 +30,15 @@ struct ClipboardPanelView: View {
 
         let query = debouncedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         if !query.isEmpty {
+            // 只匹配用户能看到的内容字段；不再匹配来源 App 名和类型标签，
+            // 否则像搜 "me" 会命中所有来自 "Chrome" 的项，看着像假搜索。
             result = result.filter { item in
                 [
-                    item.title,
-                    item.detail,
                     item.rawText,
+                    item.title,
                     item.previewTitle,
                     item.previewSubtitle,
-                    item.sourceAppName,
-                    item.kind.label
+                    item.detail
                 ]
                 .compactMap(\.self)
                 .contains { value in
@@ -101,7 +101,8 @@ struct ClipboardPanelView: View {
                                ? "还没有收藏的项目（右键卡片可收藏）"
                                : "没有找到匹配的剪贴板项目")
                 } else {
-                    timeline(items: items, selection: selection)
+                    timeline(items: items, selection: selection,
+                             query: debouncedQuery.trimmingCharacters(in: .whitespacesAndNewlines))
                 }
             }
         }
@@ -433,7 +434,7 @@ struct ClipboardPanelView: View {
         .help("更多")
     }
 
-    private func timeline(items: [ClipboardItem], selection: Int) -> some View {
+    private func timeline(items: [ClipboardItem], selection: Int, query: String) -> some View {
         SmoothHorizontalScrollView(
             selectedIndex: selection,
             scrollRequest: keyboardScrollRequest,
@@ -447,6 +448,7 @@ struct ClipboardPanelView: View {
                         item: item,
                         index: index + 1,
                         isSelected: index == selection,
+                        searchQuery: query,
                         onSelect: { onSelect(item) },
                         onToggleFavorite: { monitor.toggleFavorite(item) },
                         onCopy: { monitor.restore(item) },

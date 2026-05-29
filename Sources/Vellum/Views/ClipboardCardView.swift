@@ -5,6 +5,7 @@ struct ClipboardCardView: View {
     let item: ClipboardItem
     let index: Int
     var isSelected: Bool = false
+    var searchQuery: String = ""
     var onSelect: () -> Void = {}
     var onToggleFavorite: () -> Void = {}
     var onCopy: () -> Void = {}
@@ -195,7 +196,7 @@ struct ClipboardCardView: View {
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(sourceAccent)
 
-                Text(item.rawText ?? "")
+                Text(highlighted(item.rawText ?? ""))
                     .font(.system(size: 12, weight: .regular, design: .monospaced))
                     .lineLimit(6)
                     .foregroundStyle(.primary)
@@ -208,11 +209,11 @@ struct ClipboardCardView: View {
             VStack(alignment: .leading, spacing: 9) {
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(item.previewTitle ?? item.title)
+                        Text(highlighted(item.previewTitle ?? item.title))
                             .font(.system(size: 16, weight: .semibold))
                             .lineLimit(2)
 
-                        Text(item.previewSubtitle ?? item.detail)
+                        Text(highlighted(item.previewSubtitle ?? item.detail))
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -223,7 +224,7 @@ struct ClipboardCardView: View {
                     linkThumbnail
                 }
 
-                Text(item.rawText ?? "")
+                Text(highlighted(item.rawText ?? ""))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
@@ -247,16 +248,16 @@ struct ClipboardCardView: View {
         case .file:
             VStack(alignment: .leading, spacing: 10) {
                 fileThumbnail
-                Text(item.title)
+                Text(highlighted(item.title))
                     .font(.system(size: 15, weight: .semibold))
                     .lineLimit(2)
-                Text(item.detail)
+                Text(highlighted(item.detail))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
         case .text:
-            Text(item.rawText ?? "")
+            Text(highlighted(item.rawText ?? ""))
                 .font(.system(size: 15, weight: .regular))
                 .lineLimit(7)
                 .foregroundStyle(.primary)
@@ -267,7 +268,7 @@ struct ClipboardCardView: View {
 
     private var footer: some View {
         ZStack {
-            Text(footerText)
+            Text(highlighted(footerText))
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -390,6 +391,26 @@ struct ClipboardCardView: View {
     }
 
     // MARK: - Helpers
+
+    /// 把文本里命中搜索词的片段标黄；无搜索词时原样返回。
+    private func highlighted(_ string: String) -> AttributedString {
+        var attributed = AttributedString(string)
+        guard !searchQuery.isEmpty else { return attributed }
+
+        var searchStart = string.startIndex
+        while searchStart < string.endIndex,
+              let range = string.range(
+                of: searchQuery,
+                options: .caseInsensitive,
+                range: searchStart..<string.endIndex
+              ) {
+            if let attrRange = Range(range, in: attributed) {
+                attributed[attrRange].backgroundColor = Color.yellow.opacity(0.5)
+            }
+            searchStart = range.upperBound
+        }
+        return attributed
+    }
 
     private func relativeTime(from date: Date) -> String {
         let seconds = max(0, Int(Date().timeIntervalSince(date)))

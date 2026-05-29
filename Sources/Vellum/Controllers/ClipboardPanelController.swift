@@ -361,6 +361,12 @@ final class ClipboardPanelController {
                 return event
             }
 
+            // Cmd+F：唤起并聚焦搜索框（在搜索中再按则保持聚焦）
+            if event.modifierFlags.contains(.command), event.keyCode == 3 {
+                NotificationCenter.default.post(name: .vellumNavStartSearch, object: nil)
+                return nil
+            }
+
             if self.isTextEditing(event) {
                 if event.keyCode == 53 {
                     NotificationCenter.default.post(name: .vellumNavEscape, object: nil)
