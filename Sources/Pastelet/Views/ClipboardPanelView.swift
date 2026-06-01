@@ -18,12 +18,18 @@ struct ClipboardPanelView: View {
     @State private var searchResetRequest = 0
     @State private var showFavoritesOnly = false
     @State private var selectedIndex: Int?
+    @State private var hoveredItemID: ClipboardItem.ID?
+    @State private var deletedItems: [DeletedHistoryItem] = []
     @State private var keyboardScrollRequest = 0
     @State private var timelineResetRequest = 0
     /// 二次过滤：来源 App（按 sourceAppName）与类型（kind），与文本搜索、收藏叠加生效
     @State private var sourceFilter: String? = nil
     @State private var kindFilter: ClipboardKind? = nil
     @State private var showFilterMenu = false
+
+    private var timelineAnimation: Animation {
+        .spring(response: 0.29, dampingFraction: 0.94, blendDuration: 0.04)
+    }
 
     private var filteredItems: [ClipboardItem] {
         var result = monitor.items
@@ -112,6 +118,18 @@ struct ClipboardPanelView: View {
         let previewImageID: ObjectIdentifier?
     }
 
+    private struct DeletedHistoryItem: Identifiable {
+        let id = UUID()
+        let item: ClipboardItem
+        let index: Int
+    }
+
+    private struct DeletionTarget {
+        let item: ClipboardItem
+        let filteredIndex: Int
+        let followsKeyboardSelection: Bool
+    }
+
     var body: some View {
         // 一次 body 只算一次过滤结果与选中下标，避免在 clampedSelection/timeline/每张卡片里重复全量 filter
         let items = filteredItems
@@ -161,6 +179,7 @@ struct ClipboardPanelView: View {
         .onReceive(NotificationCenter.default.publisher(for: .pasteletNavLeft)) { _ in moveSelection(-1, requestScroll: true) }
         .onReceive(NotificationCenter.default.publisher(for: .pasteletNavRight)) { _ in moveSelection(1, requestScroll: true) }
         .onReceive(NotificationCenter.default.publisher(for: .pasteletNavDelete)) { _ in deleteSelected() }
+        .onReceive(NotificationCenter.default.publisher(for: .pasteletNavUndoDelete)) { _ in undoDelete() }
         .onReceive(NotificationCenter.default.publisher(for: .pasteletNavSelect)) { _ in selectCurrent() }
         .onReceive(NotificationCenter.default.publisher(for: .pasteletNavEscape)) { _ in collapseSearch() }
         .onReceive(NotificationCenter.default.publisher(for: .pasteletNavStartSearch)) { _ in
@@ -201,14 +220,71 @@ struct ClipboardPanelView: View {
 
     private func deleteSelected() {
         let items = filteredItems
-        guard let selection = clampedSelection(count: items.count) else { return }
-        let target = items[selection]
-        withAnimation(.easeOut(duration: 0.18)) {
-            monitor.delete(target)
+        guard let target = deletionTarget(in: items) else { return }
+        deleteItem(
+            target.item,
+            filteredIndex: target.filteredIndex,
+            followsKeyboardSelection: target.followsKeyboardSelection
+        )
+    }
+
+    private func deletionTarget(in items: [ClipboardItem]) -> DeletionTarget? {
+        if let hoveredItemID,
+           let index = items.firstIndex(where: { $0.id == hoveredItemID }) {
+            return DeletionTarget(
+                item: items[index],
+                filteredIndex: index,
+                followsKeyboardSelection: false
+            )
         }
-        // 删除后选中项停在原位（即原来的下一项），并钳制范围
-        let nextCount = items.count - 1
-        selectedIndex = nextCount > 0 ? min(selection, nextCount - 1) : nil
+
+        guard let selection = clampedSelection(count: items.count) else { return nil }
+        return DeletionTarget(
+            item: items[selection],
+            filteredIndex: selection,
+            followsKeyboardSelection: true
+        )
+    }
+
+    private func deleteItem(
+        _ item: ClipboardItem,
+        filteredIndex: Int?,
+        followsKeyboardSelection: Bool
+    ) {
+        guard let sourceIndex = monitor.items.firstIndex(where: { $0.id == item.id }) else { return }
+        let selectedItemID = clampedSelection(count: filteredItems.count).map { filteredItems[$0].id }
+
+        withAnimation(timelineAnimation) {
+            monitor.delete(item)
+        }
+        rememberDeletedItem(item, sourceIndex: sourceIndex)
+
+        if hoveredItemID == item.id {
+            hoveredItemID = nil
+        }
+
+        if followsKeyboardSelection, let filteredIndex {
+            let nextCount = filteredItems.count
+            selectedIndex = nextCount > 0 ? min(filteredIndex, nextCount - 1) : nil
+        } else if selectedItemID == item.id {
+            selectedIndex = nil
+        }
+    }
+
+    private func rememberDeletedItem(_ item: ClipboardItem, sourceIndex: Int) {
+        deletedItems.append(DeletedHistoryItem(item: item, index: sourceIndex))
+        if deletedItems.count > 20 {
+            deletedItems.removeFirst(deletedItems.count - 20)
+        }
+    }
+
+    private func undoDelete() {
+        guard let deleted = deletedItems.popLast() else { return }
+
+        withAnimation(timelineAnimation) {
+            monitor.restoreDeletedItem(deleted.item, at: deleted.index)
+        }
+        hoveredItemID = nil
     }
 
     private func selectCurrent() {
@@ -237,6 +313,7 @@ struct ClipboardPanelView: View {
         sourceFilter = nil
         kindFilter = nil
         selectedIndex = nil
+        hoveredItemID = nil
         searchResetRequest += 1
         timelineResetRequest += 1
     }
@@ -299,6 +376,7 @@ struct ClipboardPanelView: View {
 
     private func resetTimelinePosition() {
         selectedIndex = nil
+        hoveredItemID = nil
         timelineResetRequest += 1
     }
 
@@ -340,18 +418,29 @@ struct ClipboardPanelView: View {
                         onToggleFavorite: { monitor.toggleFavorite(item) },
                         onCopy: { monitor.restore(item) },
                         onDelete: {
-                            withAnimation(.easeOut(duration: 0.18)) {
-                                monitor.delete(item)
-                            }
+                            deleteItem(item, filteredIndex: index, followsKeyboardSelection: false)
                         },
-                        onHoverChanged: { _ in }
+                        onHoverChanged: { hovering in
+                            if hovering {
+                                hoveredItemID = item.id
+                            } else if hoveredItemID == item.id {
+                                hoveredItemID = nil
+                            }
+                        }
                     )
                     .id(item.id)
+                    .transition(
+                        .asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.98, anchor: .center)),
+                            removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .center))
+                        )
+                    )
                 }
             }
             .padding(.horizontal, 26)
             .padding(.top, 2)
             .padding(.bottom, 16)
+            .animation(timelineAnimation, value: items.map(\.id))
         }
     }
 

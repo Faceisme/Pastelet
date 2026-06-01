@@ -5,6 +5,7 @@ extension Notification.Name {
     static let pasteletNavLeft   = Notification.Name("pastelet.nav.left")
     static let pasteletNavRight  = Notification.Name("pastelet.nav.right")
     static let pasteletNavDelete = Notification.Name("pastelet.nav.delete")
+    static let pasteletNavUndoDelete = Notification.Name("pastelet.nav.undoDelete")
     static let pasteletNavSelect = Notification.Name("pastelet.nav.select")
     static let pasteletNavEscape = Notification.Name("pastelet.nav.escape")
     static let pasteletNavScroll = Notification.Name("pastelet.nav.scroll")

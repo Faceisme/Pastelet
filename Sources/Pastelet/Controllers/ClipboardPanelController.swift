@@ -372,6 +372,11 @@ final class ClipboardPanelController {
                 return event
             }
 
+            if event.modifierFlags.contains(.command), event.keyCode == 6 {
+                NotificationCenter.default.post(name: .pasteletNavUndoDelete, object: nil)
+                return nil
+            }
+
             if AppSettings.shared.previousItemShortcut?.matches(event) == true {
                 NotificationCenter.default.post(name: .pasteletNavLeft, object: nil)
                 return nil

@@ -60,6 +60,14 @@ final class ClipboardMonitor: ObservableObject {
         flushNow()
     }
 
+    func restoreDeletedItem(_ item: ClipboardItem, at index: Int) {
+        guard !items.contains(where: { $0.id == item.id }) else { return }
+
+        let insertionIndex = min(max(0, index), items.count)
+        items.insert(item, at: insertionIndex)
+        flushNow()
+    }
+
     func toggleFavorite(_ item: ClipboardItem) {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
 
