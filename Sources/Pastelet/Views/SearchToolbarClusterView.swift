@@ -16,8 +16,9 @@ struct SearchToolbarClusterView: View {
     @Binding var sourceFilter: String?
     @Binding var kindFilter: ClipboardKind?
 
-    let availableKinds: [ClipboardKind]
-    let availableSources: [ClipboardSourceOption]
+    // 懒求值：只在过滤弹窗真正打开时才计算（避免每次 body / 每次 hover 都全量重算来源与类型）
+    let availableKinds: () -> [ClipboardKind]
+    let availableSources: () -> [ClipboardSourceOption]
 
     let onClipboardSelected: () -> Void
     let onFavoritesSelected: () -> Void
@@ -169,7 +170,7 @@ struct SearchToolbarClusterView: View {
                     .foregroundStyle(.tertiary)
                     .contentShape(Circle())
             }
-            .buttonStyle(VellumPressButtonStyle(pressedScale: 0.84, pressedOpacity: 0.7))
+            .buttonStyle(PasteletPressButtonStyle(pressedScale: 0.84, pressedOpacity: 0.7))
             .help("清空")
             .padding(.trailing, 3)
         }
@@ -184,12 +185,12 @@ struct SearchToolbarClusterView: View {
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(VellumPressButtonStyle(pressedScale: 0.84, pressedOpacity: 0.7))
+        .buttonStyle(PasteletPressButtonStyle(pressedScale: 0.84, pressedOpacity: 0.7))
         .help("按来源 / 类型过滤")
         .popover(isPresented: $showFilterMenu, arrowEdge: .top) {
             SourceFilterMenu(
-                kinds: availableKinds,
-                sources: availableSources,
+                kinds: availableKinds(),
+                sources: availableSources(),
                 kindFilter: $kindFilter,
                 sourceFilter: $sourceFilter,
                 onPick: { showFilterMenu = false }
@@ -212,7 +213,7 @@ struct SearchToolbarClusterView: View {
                 .background(Color(nsColor: .controlColor).opacity(0.12), in: Circle())
                 .contentShape(Circle())
         }
-        .buttonStyle(VellumPressButtonStyle(pressedScale: 0.9, pressedOpacity: 0.8))
+        .buttonStyle(PasteletPressButtonStyle(pressedScale: 0.9, pressedOpacity: 0.8))
         .help(help)
     }
 
@@ -252,7 +253,7 @@ private struct ToolbarPill: View {
             }
             .contentShape(Capsule(style: .continuous))
         }
-        .buttonStyle(VellumPressButtonStyle(pressedScale: 0.95, pressedOpacity: 0.85))
+        .buttonStyle(PasteletPressButtonStyle(pressedScale: 0.95, pressedOpacity: 0.85))
         .onHover { isHovered = $0 }
         .animation(.spring(response: 0.18, dampingFraction: 0.82), value: isHovered)
         .help(title)
@@ -445,7 +446,7 @@ private struct FilterPill: View {
             }
             .contentShape(Capsule(style: .continuous))
         }
-        .buttonStyle(VellumPressButtonStyle(pressedScale: 0.96, pressedOpacity: 0.9))
+        .buttonStyle(PasteletPressButtonStyle(pressedScale: 0.96, pressedOpacity: 0.9))
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovered)
     }

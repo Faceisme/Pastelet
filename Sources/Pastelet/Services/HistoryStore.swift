@@ -14,7 +14,7 @@ final class HistoryStore {
     private let fileManager = FileManager.default
 
     /// 串行写盘队列：JSON 编码、文件写入、孤儿清理都放后台，避免阻塞主线程
-    private let ioQueue = DispatchQueue(label: "com.vellum.historystore.io", qos: .utility)
+    private let ioQueue = DispatchQueue(label: "com.pastelet.historystore.io", qos: .utility)
 
     /// 已落地的图片文件名缓存（仅主线程访问），避免每次保存在主线程 stat 磁盘判断是否已写
     private var writtenImageFilenames: Set<String> = []
@@ -28,7 +28,7 @@ final class HistoryStore {
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first ?? fileManager.temporaryDirectory
 
-        directory = base.appendingPathComponent("Vellum", isDirectory: true)
+        directory = base.appendingPathComponent("Pastelet", isDirectory: true)
         imagesDirectory = directory.appendingPathComponent("images", isDirectory: true)
         indexURL = directory.appendingPathComponent("history.json")
 
@@ -56,16 +56,19 @@ final class HistoryStore {
 
     /// 在主线程调用：准备好不可变快照（含新图片 PNG 数据）后，把磁盘 I/O 全部丢到后台串行队列。
     /// NSImage 不是线程安全的，因此 PNG 转码仍在主线程完成（且仅对尚未落地的新图片做一次）。
-    func save(_ items: [ClipboardItem]) {
+    func save(_ items: [ClipboardItem], imageData: [String: Data] = [:]) {
         let stored = items.map { StoredItem(from: $0) }
 
-        // 仅对“还没写过盘”的新图片做 PNG 转码，避免每次保存重复转码大图
+        // 仅对“还没写过盘”的新图片落盘：优先直接写剪贴板原始字节（免主线程把大图重新编码），
+        // 没有原始字节时（如文件图片的缩略图预览）才回退到对缩略图编码 PNG。
+        // 注：文件名固定 .png，但原始字节可能是 png/tiff —— NSImage(contentsOf:) 按内容识别，读取不受影响。
         var newImages: [(filename: String, data: Data)] = []
         var referenced: Set<String> = []
         for item in items where item.image != nil {
             let filename = imageFilename(for: item.fingerprint)
             referenced.insert(filename)
-            if !writtenImageFilenames.contains(filename), let data = pngData(item.image!) {
+            if !writtenImageFilenames.contains(filename),
+               let data = imageData[item.fingerprint] ?? pngData(item.image!) {
                 newImages.append((filename, data))
                 writtenImageFilenames.insert(filename)
             }
@@ -115,7 +118,7 @@ final class HistoryStore {
             do {
                 try image.data.write(to: url, options: .atomic)
             } catch {
-                NSLog("Vellum: 写入图片失败 \(url.lastPathComponent): \(error.localizedDescription)")
+                NSLog("Pastelet: 写入图片失败 \(url.lastPathComponent): \(error.localizedDescription)")
             }
         }
 
@@ -124,7 +127,7 @@ final class HistoryStore {
             let data = try JSONEncoder().encode(stored)
             try data.write(to: indexURL, options: .atomic)
         } catch {
-            NSLog("Vellum: 写入历史索引失败 \(indexURL.path): \(error.localizedDescription)")
+            NSLog("Pastelet: 写入历史索引失败 \(indexURL.path): \(error.localizedDescription)")
         }
 
         // 孤儿图片清理（降频执行）
@@ -147,9 +150,10 @@ final class HistoryStore {
 
     private func makeItem(from stored: StoredItem) -> ClipboardItem {
         var kind = ClipboardKind(rawValue: stored.kind) ?? .text
-        // 加载历史时只放缩略图，避免几十张全分辨率位图常驻内存；原图按需从磁盘加载
+        // 加载历史时只放缩略图，避免几十张全分辨率位图常驻内存；原图按需从磁盘加载。
+        // 用 CGImageSource 直接解到缩略图尺寸，不把整张原图解码进内存再缩。
         var image = stored.imageFile.flatMap {
-            NSImage(contentsOf: imagesDirectory.appendingPathComponent($0))?.vellumThumbnail()
+            NSImage.pasteletThumbnail(contentsOf: imagesDirectory.appendingPathComponent($0))
         }
         let fileURLs = stored.filePaths.map { URL(fileURLWithPath: $0) }
 
@@ -158,7 +162,7 @@ final class HistoryStore {
            fileURLs.count == 1,
            let imageURL = fileURLs.first,
            isImageFile(imageURL) {
-            image = NSImage(contentsOf: imageURL)?.vellumThumbnail()
+            image = NSImage.pasteletThumbnail(contentsOf: imageURL)
         }
 
         // 用保存时记录的原始尺寸（stored.detail），不要用缩略图尺寸，避免显示成缩略图分辨率

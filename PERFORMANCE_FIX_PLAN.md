@@ -1,4 +1,4 @@
-# Vellum 性能修复执行计划
+# Pastelet 性能修复执行计划
 
 日期：2026-05-29
 基于：`PERFORMANCE_REVIEW.md`（用户报告） + 本次代码梳理新发现。
@@ -68,7 +68,7 @@
    - 仅在属性实际变化时赋值，避免每次 body 重算（hover）都重设 `tintColor` 等触发玻璃/材质层重绘。
 
 6. **Q1 图片内存：内存只留缩略图，原图留盘** — 新增 `ImageThumbnail.swift` / `HistoryStore` / `ClipboardMonitor`
-   - 新增 `NSImage.vellumThumbnail(maxPixel:512)`（高质量降采样）。
+   - 新增 `NSImage.pasteletThumbnail(maxPixel:512)`（高质量降采样）。
    - 加载历史（`HistoryStore.makeItem`）与文件图片捕获（`makeFileItem`）只放缩略图，不再常驻全分辨率位图。
    - 粘贴时 `restore` 对图片项调用 `store.fullImage(for: fingerprint)` 从磁盘读原图，保真度不变（新复制项尚未落盘时回退到内存图）。
    - 文件→图片的尺寸 detail 改用保存时记录的原始尺寸，不用缩略图尺寸。
@@ -96,15 +96,56 @@
    - 在内容 `hostingView.layer` 上设 `allowsGroupOpacity = false`。
    - 原因：入场动画对整层做 `opacity` 0→1 渐变，而内容层有子图层（玻璃+卡片+阴影，整层约 1400×330 retina）。开启组透明度时，每帧都要把整棵图层树离屏重合成一次再统一应用透明度——这是弹出掉帧的主因。关掉后透明度按各子图层独立应用，不再每帧离屏 flatten，滑入+淡入仍保留。
 
-12. **搜索过滤后卡片错位（bug）** — `SmoothHorizontalScrollView` / `VellumSmoothScrollView`
+12. **搜索过滤后卡片错位（bug）** — `SmoothHorizontalScrollView` / `PasteletSmoothScrollView`
    - 现象：搜索框输入文字再退格删除后，卡片出现错位/残留。
    - 根因：文档视图尺寸原本在 `updateNSView` 里按 clip view 高度即时设置，但 `updateNSView` 只在 SwiftUI 状态变化时触发。空搜索结果会把时间线换成空状态视图，退格又换回时间线（重新 `makeNSView`），首个 `updateNSView` 可能在 clip view 尚无有效高度时跑，把内容定成错误尺寸且之后无更新自愈；另外列表过滤导致内容宽变化时，横向滚动偏移没被钳回有效范围。
-   - 修法：尺寸改由 `VellumSmoothScrollView.layout()` 统一处理——文档视图高度始终跟随可视区高度、宽度取内容宽与可视宽较大者，并在每次布局把横向偏移钳回 `[0, maxX]`。`updateNSView` 只负责赋 `rootView` 和设置 `contentWidth`（触发重新布局）。比改动前更健壮。
+   - 修法：尺寸改由 `PasteletSmoothScrollView.layout()` 统一处理——文档视图高度始终跟随可视区高度、宽度取内容宽与可视宽较大者，并在每次布局把横向偏移钳回 `[0, maxX]`。`updateNSView` 只负责赋 `rootView` 和设置 `contentWidth`（触发重新布局）。比改动前更健壮。
 
 ## E. 仍建议但本次未动（低优先或需确认）
 
 - 卡片 `compositingGroup()` + 阴影：每卡一次离屏合成，36 卡在动画时是 GPU 成本。改动会影响视觉，建议先用 Instruments 量化再决定，故未动。
 - `ClipboardCardView.relativeTime` 每次重绘取 `Date()`、`sourceAccent` 每次重算字符串：均为极小开销，未做缓存（避免引入静态缓存的并发复杂度）。
 - hover 改 `selectedIndex` 仍会触发整个面板 body 重算：彻底消除需把"选中态"抽到独立 ObservableObject 仅由卡片观察，属较大重构，未动。
-- `load()` 仍在启动时同步读盘 + 全量加载图片（与 Q1 绑定）。
+- `load()` 仍在启动时同步读盘（已不再整图解码，见 2026-05-30 的 R4）。
+
+---
+
+## F. 2026-05-30 复审与第二轮优化
+
+复审基线：第一轮（A–E）已落地的版本。逐文件重读后未发现新的 P0；以下为本轮直接处理项，`swift build` + `./scripts/build-app.sh` 均通过，已覆盖部署 `/Applications` 并重启。
+
+### 本轮新发现（第一轮文档未记）
+
+| 编号 | 问题 | 严重度 | 处理 |
+| --- | --- | --- | --- |
+| R1 | **剪贴板直接复制图片**这条路第一轮 Q1 没覆盖到：`makeImageItem` 仍把全分辨率 `NSImage` 放进 `item.image`/`previewImage` 常驻内存、卡片也按全分辨率画；保存时 `pngData(item.image!)` 在主线程把整张大图重新编码 PNG。而此时手里已有剪贴板原始字节（只拿去算了 hash 就丢）。 | 高 | ✅ 已改（R-A） |
+| R2 | `availableSources`/`availableKinds` 是计算属性，无条件传入 `toolbarCluster` → 每次 body（含每次 hover / 打字）都全量遍历 items 建 Set+数组+排序，而过滤弹窗大多没开。 | 中 | ✅ 已改（R-C） |
+| R3 | 文本卡片 `highlightedSnippet` 在无搜索词时直接用**完整** rawText 构建 AttributedString，而 rawText 无长度上限（Q3 的"超大转摘要"未做），超大文本每次重绘都整段转换，卡片却只显示 7 行。 | 中 | ✅ 已改（R-D） |
+
+### 变更日志（已落地）
+
+- **R-A 复制图片：原始字节直写磁盘 + 内存只留缩略图** — `ClipboardMonitor` / `HistoryStore`
+  - `ClipboardMonitor` 新增 `pendingImageData`（fingerprint→原始字节）暂存；`makeImageItem` 内存/卡片改放 `pasteletThumbnail()`，原始字节暂存待落盘。
+  - 新增 `persist()` 统一落盘：`store.save(items, imageData:)` 在同步阶段取走所需字节后清空暂存；`flushNow`/`flushAndWait`/`saveSoon` 均改走 `persist()`。
+  - `HistoryStore.save(_:imageData:)` 优先**直接写剪贴板原始字节**（免主线程把大图重新编码 PNG），无字节时才回退对缩略图编码。
+  - `restore` 增加"未落盘窗口内用暂存原始字节还原全分辨率"兜底；原图完整留盘，粘贴保真度不变。
+  - 收益：复制截图/大图时主线程不再重编码大图，且不再常驻全分辨率位图。
+
+- **R-C 过滤选项懒求值** — `SearchToolbarClusterView` / `ClipboardPanelView`
+  - `availableKinds`/`availableSources` 由值改为闭包 `() -> [...]`，只在过滤弹窗真正打开（弹层内 `SourceFilterMenu`）时才计算，不再每次 body 重建来源列表 + 排序。
+
+- **R-D 大文本卡片展示截断** — `ClipboardCardView`
+  - `highlightedSnippet` 无搜索分支只取前 ~600 字符再转 `AttributedString`；粘贴走 `rawText` 不受影响（纯展示侧截断）。
+
+- **R4（即原 P2-E）历史加载改 ImageIO 直接降采样** — `ImageThumbnail` / `HistoryStore`
+  - 新增 `NSImage.pasteletThumbnail(contentsOf:maxPixel:)`：用 `CGImageSourceCreateThumbnailAtIndex` 直接从磁盘 URL 解到缩略图尺寸，不再"整图解码进内存再缩"。
+  - `HistoryStore.makeItem` 两处 `NSImage(contentsOf:)?.pasteletThumbnail()` 改用之。
+  - R-A 之后磁盘存的是全分辨率原图，load 回来若整图解码内存/CPU 都贵；本项与 R-A 互补：磁盘留原图保真、load 只解缩略图。
+
+### 本轮评估后仍未动（含原因）
+
+- **选中态抽独立 ObservableObject（消除 hover 重建整条时间线）**：hover 跨卡会令 `selectedIndex` 进 `timelineSignature` → 重建 36 张卡片 body。但量级仅 36、SwiftUI diffing 下实际重绘只有 2 张、且 hover 高亮本地 `isHovered` 已生效，单次成本被稀释；属中等重构且易踩选中/键盘/滚动/删除落点联动 bug，ROI 偏低，暂不动。真有 hover 掉帧更可能是每卡 `compositingGroup()`+阴影的 GPU 离屏合成（P3），需 Instruments 量化后再定。
+- **R4 的"load 异步回填"**：解码改 downsample-direct 后单次已很便宜，且启动期面板不可见，挪后台要引入 `var image` + Sendable 数据跨线程 + 按 fingerprint 回填 + 批量重发布，边际收益小、联动风险大，故只做同步 CGImageSource，未做异步。
+- 链接预览仍无缓存/去重/并发限制/取消（第一轮 REVIEW P1，未做）。
+- 每卡 `compositingGroup()`+阴影离屏合成；`relativeTime` 每帧取 `Date()`、`sourceAccent` 每帧拼字符串：均待 Instruments 量化后再定。
 </content>

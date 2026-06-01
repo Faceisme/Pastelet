@@ -157,21 +157,21 @@ struct ClipboardPanelView: View {
             }
         }
         .padding(.horizontal, 6)
-        .onReceive(NotificationCenter.default.publisher(for: .vellumNavLeft)) { _ in moveSelection(-1, requestScroll: true) }
-        .onReceive(NotificationCenter.default.publisher(for: .vellumNavRight)) { _ in moveSelection(1, requestScroll: true) }
-        .onReceive(NotificationCenter.default.publisher(for: .vellumNavDelete)) { _ in deleteSelected() }
-        .onReceive(NotificationCenter.default.publisher(for: .vellumNavSelect)) { _ in selectCurrent() }
-        .onReceive(NotificationCenter.default.publisher(for: .vellumNavEscape)) { _ in collapseSearch() }
-        .onReceive(NotificationCenter.default.publisher(for: .vellumNavStartSearch)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .pasteletNavLeft)) { _ in moveSelection(-1, requestScroll: true) }
+        .onReceive(NotificationCenter.default.publisher(for: .pasteletNavRight)) { _ in moveSelection(1, requestScroll: true) }
+        .onReceive(NotificationCenter.default.publisher(for: .pasteletNavDelete)) { _ in deleteSelected() }
+        .onReceive(NotificationCenter.default.publisher(for: .pasteletNavSelect)) { _ in selectCurrent() }
+        .onReceive(NotificationCenter.default.publisher(for: .pasteletNavEscape)) { _ in collapseSearch() }
+        .onReceive(NotificationCenter.default.publisher(for: .pasteletNavStartSearch)) { _ in
             expandSearch()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .vellumNavCancelSearch)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .pasteletNavCancelSearch)) { _ in
             // 点击下方卡片区即收起；过滤菜单开着时先让它消化这次点击（关闭弹层），不收起搜索
             if isSearching && !showFilterMenu {
                 collapseSearch()
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .vellumPanelResetSearch)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .pasteletPanelResetSearch)) { _ in
             resetSearchState()
         }
         .task(id: searchText) {
@@ -262,8 +262,8 @@ struct ClipboardPanelView: View {
             showFilterMenu: $showFilterMenu,
             sourceFilter: $sourceFilter,
             kindFilter: $kindFilter,
-            availableKinds: availableKinds,
-            availableSources: availableSources,
+            availableKinds: { availableKinds },
+            availableSources: { availableSources },
             onClipboardSelected: {
                 selectedIndex = 0
             },
@@ -295,7 +295,7 @@ struct ClipboardPanelView: View {
         Menu {
             Button("打开设置", action: onSettings)
             Divider()
-            Button("退出 Vellum", role: .destructive, action: onQuit)
+            Button("退出 Pastelet", role: .destructive, action: onQuit)
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 15, weight: .semibold))
@@ -376,7 +376,7 @@ struct ClipboardPanelView: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.primary)
 
-            Text("按 \(settings.launchShortcut?.displayString ?? "菜单栏") 呼出 Vellum，点击卡片会复制回系统剪贴板。")
+            Text("按 \(settings.launchShortcut?.displayString ?? "菜单栏") 呼出 Pastelet，点击卡片会复制回系统剪贴板。")
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
         }
@@ -409,7 +409,7 @@ private struct ToolbarIconButton: View {
                 .contentShape(Rectangle())
                 .background(iconBackground, in: Circle())
         }
-        .buttonStyle(VellumPressButtonStyle(pressedScale: 0.86, pressedOpacity: 0.78))
+        .buttonStyle(PasteletPressButtonStyle(pressedScale: 0.86, pressedOpacity: 0.78))
         .foregroundStyle(Color(nsColor: .labelColor).opacity(0.92))
         .onHover { isHovered = $0 }
         .animation(.spring(response: 0.18, dampingFraction: 0.82), value: isHovered)

@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct VellumPressButtonStyle: ButtonStyle {
+struct PasteletPressButtonStyle: ButtonStyle {
     var pressedScale: CGFloat = 0.94
     var pressedOpacity: Double = 0.86
 

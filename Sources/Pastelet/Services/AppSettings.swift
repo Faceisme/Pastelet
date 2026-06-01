@@ -27,32 +27,32 @@ final class AppSettings: ObservableObject, @unchecked Sendable {
     }
 
     /// 呼出主面板的全局快捷键；nil 表示禁用。
-    @Published var launchShortcut: VellumKeyboardShortcut? {
+    @Published var launchShortcut: PasteletKeyboardShortcut? {
         didSet { saveShortcut(launchShortcut, keyPrefix: Keys.launchShortcutPrefix) }
     }
 
-    /// 预留：Vellum Stack 快捷键。
-    @Published var stackShortcut: VellumKeyboardShortcut? {
+    /// 预留：Pastelet Stack 快捷键。
+    @Published var stackShortcut: PasteletKeyboardShortcut? {
         didSet { saveShortcut(stackShortcut, keyPrefix: Keys.stackShortcutPrefix) }
     }
 
     /// 面板内显示下一个项目。
-    @Published var nextItemShortcut: VellumKeyboardShortcut? {
+    @Published var nextItemShortcut: PasteletKeyboardShortcut? {
         didSet { saveShortcut(nextItemShortcut, keyPrefix: Keys.nextItemShortcutPrefix) }
     }
 
     /// 面板内显示上一个项目。
-    @Published var previousItemShortcut: VellumKeyboardShortcut? {
+    @Published var previousItemShortcut: PasteletKeyboardShortcut? {
         didSet { saveShortcut(previousItemShortcut, keyPrefix: Keys.previousItemShortcutPrefix) }
     }
 
     /// 快速粘贴使用的修饰键。
-    @Published var quickPasteModifier: VellumModifierKey {
+    @Published var quickPasteModifier: PasteletModifierKey {
         didSet { defaults.set(quickPasteModifier.rawValue, forKey: Keys.quickPasteModifier) }
     }
 
     /// 纯文本模式使用的修饰键。
-    @Published var plainTextModifier: VellumModifierKey {
+    @Published var plainTextModifier: PasteletModifierKey {
         didSet { defaults.set(plainTextModifier.rawValue, forKey: Keys.plainTextModifier) }
     }
 
@@ -80,17 +80,17 @@ final class AppSettings: ObservableObject, @unchecked Sendable {
     private let defaults = UserDefaults.standard
 
     private enum Keys {
-        static let pasteToActiveApp = "vellum.pasteToActiveApp"
-        static let alwaysPlainText = "vellum.alwaysPlainText"
-        static let retentionIndex = "vellum.retentionIndex"
-        static let soundEnabled = "vellum.soundEnabled"
-        static let hideMenuBarIcon = "vellum.hideMenuBarIcon"
-        static let launchShortcutPrefix = "vellum.shortcut.launch"
-        static let stackShortcutPrefix = "vellum.shortcut.stack"
-        static let nextItemShortcutPrefix = "vellum.shortcut.nextItem"
-        static let previousItemShortcutPrefix = "vellum.shortcut.previousItem"
-        static let quickPasteModifier = "vellum.shortcut.quickPasteModifier"
-        static let plainTextModifier = "vellum.shortcut.plainTextModifier"
+        static let pasteToActiveApp = "pastelet.pasteToActiveApp"
+        static let alwaysPlainText = "pastelet.alwaysPlainText"
+        static let retentionIndex = "pastelet.retentionIndex"
+        static let soundEnabled = "pastelet.soundEnabled"
+        static let hideMenuBarIcon = "pastelet.hideMenuBarIcon"
+        static let launchShortcutPrefix = "pastelet.shortcut.launch"
+        static let stackShortcutPrefix = "pastelet.shortcut.stack"
+        static let nextItemShortcutPrefix = "pastelet.shortcut.nextItem"
+        static let previousItemShortcutPrefix = "pastelet.shortcut.previousItem"
+        static let quickPasteModifier = "pastelet.shortcut.quickPasteModifier"
+        static let plainTextModifier = "pastelet.shortcut.plainTextModifier"
     }
 
     private init() {
@@ -99,10 +99,10 @@ final class AppSettings: ObservableObject, @unchecked Sendable {
             Keys.retentionIndex: 2,
             Keys.hideMenuBarIcon: false,
             "\(Keys.launchShortcutPrefix).enabled": true,
-            "\(Keys.launchShortcutPrefix).keyCode": Int(VellumKeyboardShortcut.defaultLaunch.keyCode),
-            "\(Keys.launchShortcutPrefix).modifiers": Int(VellumKeyboardShortcut.defaultLaunch.modifiers.rawValue),
-            Keys.quickPasteModifier: VellumModifierKey.command.rawValue,
-            Keys.plainTextModifier: VellumModifierKey.shift.rawValue
+            "\(Keys.launchShortcutPrefix).keyCode": Int(PasteletKeyboardShortcut.defaultLaunch.keyCode),
+            "\(Keys.launchShortcutPrefix).modifiers": Int(PasteletKeyboardShortcut.defaultLaunch.modifiers.rawValue),
+            Keys.quickPasteModifier: PasteletModifierKey.command.rawValue,
+            Keys.plainTextModifier: PasteletModifierKey.shift.rawValue
         ])
         pasteToActiveApp = defaults.bool(forKey: Keys.pasteToActiveApp)
         alwaysPlainText = defaults.bool(forKey: Keys.alwaysPlainText)
@@ -113,25 +113,25 @@ final class AppSettings: ObservableObject, @unchecked Sendable {
         stackShortcut = Self.loadShortcut(from: defaults, keyPrefix: Keys.stackShortcutPrefix)
         nextItemShortcut = Self.loadShortcut(from: defaults, keyPrefix: Keys.nextItemShortcutPrefix)
         previousItemShortcut = Self.loadShortcut(from: defaults, keyPrefix: Keys.previousItemShortcutPrefix)
-        quickPasteModifier = VellumModifierKey(rawValue: defaults.string(forKey: Keys.quickPasteModifier) ?? "") ?? .command
-        plainTextModifier = VellumModifierKey(rawValue: defaults.string(forKey: Keys.plainTextModifier) ?? "") ?? .shift
+        quickPasteModifier = PasteletModifierKey(rawValue: defaults.string(forKey: Keys.quickPasteModifier) ?? "") ?? .command
+        plainTextModifier = PasteletModifierKey(rawValue: defaults.string(forKey: Keys.plainTextModifier) ?? "") ?? .shift
         // 登录项以系统状态为准（didSet 不会在 init 阶段触发）
         openAtLogin = (SMAppService.mainApp.status == .enabled)
     }
 
-    private static func loadShortcut(from defaults: UserDefaults, keyPrefix: String) -> VellumKeyboardShortcut? {
+    private static func loadShortcut(from defaults: UserDefaults, keyPrefix: String) -> PasteletKeyboardShortcut? {
         let enabledKey = "\(keyPrefix).enabled"
         guard defaults.bool(forKey: enabledKey) else { return nil }
 
         let keyCode = defaults.integer(forKey: "\(keyPrefix).keyCode")
         let modifiers = defaults.integer(forKey: "\(keyPrefix).modifiers")
-        return VellumKeyboardShortcut(
+        return PasteletKeyboardShortcut(
             keyCode: UInt32(keyCode),
             modifiers: NSEvent.ModifierFlags(rawValue: UInt(modifiers))
         )
     }
 
-    private func saveShortcut(_ shortcut: VellumKeyboardShortcut?, keyPrefix: String) {
+    private func saveShortcut(_ shortcut: PasteletKeyboardShortcut?, keyPrefix: String) {
         let enabledKey = "\(keyPrefix).enabled"
         guard let shortcut else {
             defaults.set(false, forKey: enabledKey)
@@ -155,7 +155,7 @@ final class AppSettings: ObservableObject, @unchecked Sendable {
                 }
             }
         } catch {
-            NSLog("Vellum 登录项设置失败: \(error.localizedDescription)")
+            NSLog("Pastelet 登录项设置失败: \(error.localizedDescription)")
         }
     }
 }

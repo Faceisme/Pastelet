@@ -1,12 +1,12 @@
-# Vellum 代码逻辑与性能审查报告
+# Pastelet 代码逻辑与性能审查报告
 
 审查日期：2026-05-29
 
 ## 1. 项目代码逻辑梳理
 
-Vellum 是一个原生 macOS 剪贴板管理器，主流程如下：
+Pastelet 是一个原生 macOS 剪贴板管理器，主流程如下：
 
-1. `VellumMain.swift` 创建 `NSApplication`，以 accessory 模式运行。
+1. `PasteletMain.swift` 创建 `NSApplication`，以 accessory 模式运行。
 2. `AppDelegate.swift` 在启动时创建 `ClipboardMonitor`、`HotKeyManager`、`ClipboardPanelController`，注册全局快捷键，绑定设置变化，启动剪贴板监听，并预热底部面板。
 3. `ClipboardMonitor.swift` 负责核心数据流：
    - 启动时从 `HistoryStore` 加载历史。
@@ -16,7 +16,7 @@ Vellum 是一个原生 macOS 剪贴板管理器，主流程如下：
    - 点击卡片时把历史项恢复到系统剪贴板，必要时保留 RTF。
 4. `HistoryStore.swift` 负责持久化：
    - `history.json` 存文本、文件路径、链接、RTF base64、元数据。
-   - 图片写入 `Application Support/Vellum/images`，JSON 只保存图片文件名。
+   - 图片写入 `Application Support/Pastelet/images`，JSON 只保存图片文件名。
    - 每次保存都会重建 JSON，并清理无引用图片。
 5. `ClipboardPanelController.swift` 管理底部 `NSPanel`：
    - 创建 SwiftUI 面板。

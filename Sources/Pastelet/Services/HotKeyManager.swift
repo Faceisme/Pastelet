@@ -15,7 +15,7 @@ final class HotKeyManager {
     }
 
     @discardableResult
-    func updateShortcut(_ shortcut: VellumKeyboardShortcut?) -> Bool {
+    func updateShortcut(_ shortcut: PasteletKeyboardShortcut?) -> Bool {
         unregisterShortcut()
         guard let shortcut else {
             isRegistered = false

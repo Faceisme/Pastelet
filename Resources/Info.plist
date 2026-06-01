@@ -4,16 +4,18 @@
 <dict>
     <key>CFBundleDevelopmentRegion</key>
     <string>zh_CN</string>
+    <key>CFBundleDisplayName</key>
+    <string>Pastelet</string>
     <key>CFBundleExecutable</key>
-    <string>Vellum</string>
+    <string>Pastelet</string>
     <key>CFBundleIdentifier</key>
-    <string>com.face.vellum</string>
+    <string>com.face.pastelet</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleName</key>
-    <string>Vellum</string>
+    <string>Pastelet</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

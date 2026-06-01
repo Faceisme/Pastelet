@@ -16,16 +16,20 @@ final class ClipboardMonitor: ObservableObject {
     /// 富文本（RTF）单项上限：超过则降级为纯文本，避免 base64 膨胀 JSON 与内存
     private let maxRTFBytes = 1 * 1024 * 1024
 
-    private static let favoritesKey = "vellum.favorites"
+    private static let favoritesKey = "pastelet.favorites"
     private var favoriteFingerprints: Set<String> =
-        Set(UserDefaults.standard.stringArray(forKey: "vellum.favorites") ?? [])
+        Set(UserDefaults.standard.stringArray(forKey: "pastelet.favorites") ?? [])
 
     private let store = HistoryStore()
     private var saveGeneration = 0
 
+    /// 新复制图片的原始字节（fingerprint → data），暂存到落盘；落盘后清空，
+    /// 避免全分辨率原图字节常驻内存（内存/卡片只留缩略图）。
+    private var pendingImageData: [String: Data] = [:]
+
     func start() {
         items = store.load()
-        NSLog("Vellum: 启动加载历史 \(items.count) 条")
+        NSLog("Pastelet: 启动加载历史 \(items.count) 条")
         pruneExpired()
         captureCurrentPasteboard()
 
@@ -63,7 +67,7 @@ final class ClipboardMonitor: ObservableObject {
         if !items[index].isFavorite {
             let currentFavorites = items.reduce(0) { $0 + ($1.isFavorite ? 1 : 0) }
             guard currentFavorites < maxFavorites else {
-                NSLog("Vellum: 收藏已达上限 \(maxFavorites)，忽略本次收藏")
+                NSLog("Pastelet: 收藏已达上限 \(maxFavorites)，忽略本次收藏")
                 NSSound(named: "Funk")?.play()
                 return
             }
@@ -84,14 +88,21 @@ final class ClipboardMonitor: ObservableObject {
     /// 删除/收藏/清空时调用：取消挂起的防抖保存并立即（异步）落盘
     func flushNow() {
         saveGeneration += 1 // 取消挂起的防抖保存
-        store.save(items)
+        persist()
     }
 
     /// 退出前调用：落盘并同步等待写盘队列清空，避免丢数据
     func flushAndWait() {
         saveGeneration += 1
-        store.save(items)
+        persist()
         store.flush()
+    }
+
+    /// 落盘当前快照：把暂存的新图片原始字节交给 store 直接写盘（免主线程重新编码），
+    /// 随后清空暂存——store.save 已在同步阶段把所需字节取进快照，此时清空安全。
+    private func persist() {
+        store.save(items, imageData: pendingImageData)
+        pendingImageData.removeAll()
     }
 
     /// 按设置的保留时长清理过期项（收藏豁免）
@@ -112,7 +123,7 @@ final class ClipboardMonitor: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
             Task { @MainActor in
                 guard let self, generation == self.saveGeneration else { return }
-                self.store.save(self.items)
+                self.persist()
             }
         }
     }
@@ -127,6 +138,9 @@ final class ClipboardMonitor: ObservableObject {
                 pasteboard.writeObjects(item.fileURLs as [NSURL])
             } else if let full = store.fullImage(for: item.fingerprint) {
                 // 内存里只留缩略图，粘贴时从磁盘加载原图，保证全分辨率
+                pasteboard.writeObjects([full])
+            } else if let data = pendingImageData[item.fingerprint], let full = NSImage(data: data) {
+                // 刚复制、还没落盘（防抖窗口内）就粘贴：用暂存的原始字节还原全分辨率
                 pasteboard.writeObjects([full])
             } else if let image = item.image {
                 pasteboard.writeObjects([image])
@@ -239,8 +253,15 @@ final class ClipboardMonitor: ObservableObject {
     ) -> ClipboardItem {
         let width = Int(image.size.width)
         let height = Int(image.size.height)
-        let hash = rawData?.vellumContentHash ?? "\(width)x\(height)"
+        let hash = rawData?.pasteletContentHash ?? "\(width)x\(height)"
         let fingerprint = "image:\(hash)"
+
+        // 内存/卡片只留缩略图（卡片仅 ~232pt）；原始字节暂存，落盘时直接写盘、
+        // 免掉主线程把整张大图重新编码成 PNG。原图完整留盘，粘贴时按需读回，保真度不变。
+        let thumbnail = image.pasteletThumbnail()
+        if let rawData {
+            pendingImageData[fingerprint] = rawData
+        }
 
         return ClipboardItem(
             kind: .image,
@@ -248,13 +269,13 @@ final class ClipboardMonitor: ObservableObject {
             subtitle: "刚刚",
             detail: "\(width) × \(height)",
             rawText: nil,
-            image: image,
+            image: thumbnail,
             fileURLs: [],
             colorHex: nil,
             linkURL: nil,
             previewTitle: nil,
             previewSubtitle: nil,
-            previewImage: image,
+            previewImage: thumbnail,
             sourceAppName: sourceName,
             sourceBundleIdentifier: sourceBundleIdentifier,
             sourceIcon: sourceIcon,
@@ -281,7 +302,7 @@ final class ClipboardMonitor: ObservableObject {
             let width = Int(preview.size.width)
             let height = Int(preview.size.height)
             // 卡片只显示缩略图；粘贴时走原始文件 URL，保真度不受影响
-            let thumbnail = preview.vellumThumbnail()
+            let thumbnail = preview.pasteletThumbnail()
 
             return ClipboardItem(
                 kind: .image,
@@ -477,7 +498,7 @@ final class ClipboardMonitor: ObservableObject {
                         }
 
                         // 预览图卡片上只显示 56pt，存缩略图即可
-                        self.items[imageIndex].previewImage = image.vellumThumbnail(maxPixel: 160)
+                        self.items[imageIndex].previewImage = image.pasteletThumbnail(maxPixel: 160)
                     }
                 }
             }

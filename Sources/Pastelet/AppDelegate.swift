@@ -80,7 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard statusItem == nil else { return }
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "Vellum")
+        item.button?.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "Pastelet")
         item.button?.imagePosition = .imageOnly
 
         let menu = NSMenu()
@@ -91,7 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(menuItem("清空历史", action: #selector(clearHistory), key: ""))
         menu.addItem(.separator())
-        menu.addItem(menuItem("退出 Vellum", action: #selector(quit), key: "q"))
+        menu.addItem(menuItem("退出 Pastelet", action: #selector(quit), key: "q"))
         item.menu = menu
 
         statusItem = item
@@ -132,11 +132,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.terminate(nil)
     }
 
-    private func showHotKeyFailureAlert(shortcut: VellumKeyboardShortcut?) {
+    private func showHotKeyFailureAlert(shortcut: PasteletKeyboardShortcut?) {
         let alert = NSAlert()
         alert.messageText = "快捷键注册失败"
         let shortcutText = shortcut?.displayString ?? "当前快捷键"
-        alert.informativeText = "\(shortcutText) 可能已被其他应用占用。你仍然可以从菜单栏打开 Vellum，或在设置中换一个快捷键。"
+        alert.informativeText = "\(shortcutText) 可能已被其他应用占用。你仍然可以从菜单栏打开 Pastelet，或在设置中换一个快捷键。"
         alert.alertStyle = .warning
         alert.addButton(withTitle: "知道了")
         alert.runModal()

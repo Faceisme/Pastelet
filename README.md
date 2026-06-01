@@ -1,6 +1,6 @@
-# Vellum
+# Pastelet
 
-Vellum 是一款原生 macOS 剪贴板管理器，采用底部弹出式面板展示剪贴板历史。界面目标是接近高端独立 macOS 应用的视觉质感：Liquid Glass、轻量动效、富媒体预览和低干扰的时间线布局。
+Pastelet 是一款原生 macOS 剪贴板管理器，采用底部弹出式面板展示剪贴板历史。界面目标是接近高端独立 macOS 应用的视觉质感：Liquid Glass、轻量动效、富媒体预览和低干扰的时间线布局。
 
 ## 功能
 
@@ -14,7 +14,7 @@ Vellum 是一款原生 macOS 剪贴板管理器，采用底部弹出式面板展
 
 ## 默认快捷键
 
-- 呼出 Vellum：`Command + Shift + V`
+- 呼出 Pastelet：`Command + Shift + V`
 
 快捷键可以在应用设置中修改。
 
@@ -40,18 +40,18 @@ Vellum 是一款原生 macOS 剪贴板管理器，采用底部弹出式面板展
 构建完成后，应用会生成在：
 
 ```bash
-build/Vellum.app
+build/Pastelet.app
 ```
 
 如需安装到系统应用目录：
 
 ```bash
-pkill -x Vellum 2>/dev/null || true
-rm -rf /Applications/Vellum.app
-cp -R build/Vellum.app /Applications/Vellum.app
-xattr -cr /Applications/Vellum.app 2>/dev/null || true
-codesign --force --deep --sign - /Applications/Vellum.app
-open /Applications/Vellum.app
+pkill -x Pastelet 2>/dev/null || true
+rm -rf /Applications/Pastelet.app
+cp -R build/Pastelet.app /Applications/Pastelet.app
+xattr -cr /Applications/Pastelet.app 2>/dev/null || true
+codesign --force --deep --sign - /Applications/Pastelet.app
+open /Applications/Pastelet.app
 ```
 
 ## 项目状态

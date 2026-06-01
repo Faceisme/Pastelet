@@ -1,7 +1,7 @@
 import AppKit
 
 @main
-struct VellumMain {
+struct PasteletMain {
     @MainActor
     static func main() {
         let app = NSApplication.shared

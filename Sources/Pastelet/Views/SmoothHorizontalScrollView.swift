@@ -42,8 +42,8 @@ struct SmoothHorizontalScrollView<Content: View, ContentSignature: Equatable>: N
             + Self.horizontalPadding * 2
     }
 
-    func makeNSView(context: Context) -> VellumSmoothScrollView {
-        let scrollView = VellumSmoothScrollView()
+    func makeNSView(context: Context) -> PasteletSmoothScrollView {
+        let scrollView = PasteletSmoothScrollView()
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
         scrollView.hasHorizontalScroller = false
@@ -73,7 +73,7 @@ struct SmoothHorizontalScrollView<Content: View, ContentSignature: Equatable>: N
         return scrollView
     }
 
-    func updateNSView(_ scrollView: VellumSmoothScrollView, context: Context) {
+    func updateNSView(_ scrollView: PasteletSmoothScrollView, context: Context) {
         guard let hostingView = context.coordinator.hostingView else { return }
 
         // 卡片内容没有变化时，不重设 rootView，避免无关工具栏动画每帧重建整条时间线。
@@ -105,7 +105,7 @@ struct SmoothHorizontalScrollView<Content: View, ContentSignature: Equatable>: N
     }
 }
 
-final class VellumSmoothScrollView: NSScrollView {
+final class PasteletSmoothScrollView: NSScrollView {
     private var targetX: CGFloat = 0
     private var isAnimatingWheel = false
 

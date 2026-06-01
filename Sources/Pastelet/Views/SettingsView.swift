@@ -209,14 +209,14 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 18) {
             SettingsCard {
                 EditableShortcutRow(
-                    title: "启动 Vellum",
+                    title: "启动 Pastelet",
                     shortcut: $settings.launchShortcut,
                     clearable: true,
                     requiresModifier: true
                 )
                 ThinDivider()
                 EditableShortcutRow(
-                    title: "启动 Vellum Stack",
+                    title: "启动 Pastelet Stack",
                     shortcut: $settings.stackShortcut,
                     clearable: true,
                     requiresModifier: true
@@ -456,7 +456,7 @@ private struct CheckboxRow: View {
 
 private struct EditableShortcutRow: View {
     let title: String
-    @Binding var shortcut: VellumKeyboardShortcut?
+    @Binding var shortcut: PasteletKeyboardShortcut?
     var clearable: Bool
     var requiresModifier: Bool
 
@@ -476,7 +476,7 @@ private struct EditableShortcutRow: View {
 }
 
 private struct ShortcutRecorderButton: View {
-    @Binding var shortcut: VellumKeyboardShortcut?
+    @Binding var shortcut: PasteletKeyboardShortcut?
     var clearable: Bool
     var requiresModifier: Bool
 
@@ -571,7 +571,7 @@ private struct ShortcutRecorderButton: View {
             return
         }
 
-        let candidate = VellumKeyboardShortcut(event: event)
+        let candidate = PasteletKeyboardShortcut(event: event)
         if requiresModifier && !candidate.hasModifier {
             validationMessage = "需要组合键"
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
@@ -598,7 +598,7 @@ private struct ShortcutRecorderButton: View {
 
 private struct ModifierRow: View {
     let title: String
-    @Binding var selection: VellumModifierKey
+    @Binding var selection: PasteletModifierKey
     var suffix: String?
 
     var body: some View {
@@ -607,7 +607,7 @@ private struct ModifierRow: View {
                 .font(.system(size: 13, weight: .medium))
             Spacer()
             Menu {
-                ForEach(VellumModifierKey.allCases) { key in
+                ForEach(PasteletModifierKey.allCases) { key in
                     Button(key.displayName) {
                         selection = key
                     }

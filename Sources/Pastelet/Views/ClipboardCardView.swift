@@ -46,7 +46,7 @@ struct ClipboardCardView: View {
             .compositingGroup()
             .shadow(color: .black.opacity(highlighted ? 0.12 : 0.07), radius: highlighted ? 8 : 4, x: 0, y: highlighted ? 4 : 2)
         }
-        .buttonStyle(VellumPressButtonStyle(pressedScale: 0.98, pressedOpacity: 0.96))
+        .buttonStyle(PasteletPressButtonStyle(pressedScale: 0.98, pressedOpacity: 0.96))
         .animation(.easeOut(duration: 0.15), value: highlighted)
         .onHover {
             isHovered = $0
@@ -415,7 +415,14 @@ struct ClipboardCardView: View {
     /// 长正文的「搜索摘要」：命中靠后(超出可见行)时，从命中前一点处开窗、前缀 "…"，
     /// 把关键字上移到卡片可见区，保证每个命中项都能看到高亮；命中靠前则原样高亮。
     private func highlightedSnippet(_ string: String) -> AttributedString {
-        guard !searchQuery.isEmpty else { return AttributedString(string) }
+        guard !searchQuery.isEmpty else {
+            // 无搜索时只取约一屏的前缀：超长文本（可能上百 KB）若每次重绘都整段转 AttributedString
+            // 会很贵，而卡片本就只显示几行。
+            if let end = string.index(string.startIndex, offsetBy: 600, limitedBy: string.endIndex) {
+                return AttributedString(String(string[..<end]) + "…")
+            }
+            return AttributedString(string)
+        }
         guard let match = string.range(of: searchQuery, options: .caseInsensitive) else {
             // 本字段未命中（可能命中在别的字段），原样返回不开窗。
             return AttributedString(string)

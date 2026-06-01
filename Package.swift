@@ -3,17 +3,17 @@
 import PackageDescription
 
 let package = Package(
-    name: "Vellum",
+    name: "Pastelet",
     platforms: [
         .macOS("26.0")
     ],
     products: [
-        .executable(name: "Vellum", targets: ["Vellum"])
+        .executable(name: "Pastelet", targets: ["Pastelet"])
     ],
     targets: [
         .executableTarget(
-            name: "Vellum",
-            path: "Sources/Vellum"
+            name: "Pastelet",
+            path: "Sources/Pastelet"
         )
     ]
 )

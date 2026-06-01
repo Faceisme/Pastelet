@@ -13,7 +13,7 @@ final class ClipboardPanelController {
 
     private let monitor: ClipboardMonitor
     private let onShowSettings: @MainActor () -> Void
-    private var panel: VellumPanel?
+    private var panel: PasteletPanel?
     private var localKeyMonitor: Any?
     private var globalMouseMonitor: Any?
     private var didWarmPanel = false
@@ -54,7 +54,7 @@ final class ClipboardPanelController {
 
     func show() {
         guard panelState != .showing, panelState != .visible else { return }
-        NotificationCenter.default.post(name: .vellumPanelResetSearch, object: nil)
+        NotificationCenter.default.post(name: .pasteletPanelResetSearch, object: nil)
 
         // 记录“当前正在用的 App”，必须在激活自己之前抓
         let frontmost = NSWorkspace.shared.frontmostApplication
@@ -98,7 +98,7 @@ final class ClipboardPanelController {
         animationToken += 1
         let token = animationToken
         panelState = .hiding
-        NotificationCenter.default.post(name: .vellumPanelResetSearch, object: nil)
+        NotificationCenter.default.post(name: .pasteletPanelResetSearch, object: nil)
 
         removeEventMonitors()
 
@@ -151,7 +151,7 @@ final class ClipboardPanelController {
         keyUp.post(tap: .cghidEventTap)
     }
 
-    private func makePanel() -> VellumPanel {
+    private func makePanel() -> PasteletPanel {
         let content = ClipboardPanelView(
             monitor: monitor,
             onSelect: { [weak self] item in
@@ -171,7 +171,7 @@ final class ClipboardPanelController {
             }
         )
 
-        let panel = VellumPanel(
+        let panel = PasteletPanel(
             contentRect: frameForPanel(),
             styleMask: [.borderless, .fullSizeContentView],
             backing: .buffered,
@@ -205,7 +205,7 @@ final class ClipboardPanelController {
         return NSRect(x: x, y: y, width: width, height: height)
     }
 
-    private func warmPanelOffscreen(_ panel: VellumPanel) {
+    private func warmPanelOffscreen(_ panel: PasteletPanel) {
         let finalFrame = frameForPanel()
         let warmFrame = finalFrame.offsetBy(dx: 0, dy: -finalFrame.height - 180)
 
@@ -228,7 +228,7 @@ final class ClipboardPanelController {
     }
 
     private func prepareContentLayerForPresentation(
-        _ panel: VellumPanel,
+        _ panel: PasteletPanel,
         continuingCurrentAnimation: Bool
     ) -> (y: CGFloat, opacity: Float) {
         guard let contentView = panel.contentView, let layer = contentView.layer else {
@@ -255,7 +255,7 @@ final class ClipboardPanelController {
     }
 
     private func animateContentLayerIn(
-        _ panel: VellumPanel,
+        _ panel: PasteletPanel,
         token: Int,
         fromY: CGFloat,
         fromOpacity: Float
@@ -289,11 +289,11 @@ final class ClipboardPanelController {
         CATransaction.setDisableActions(true)
         layer.opacity = 1
         layer.transform = CATransform3DIdentity
-        layer.add(group, forKey: "vellumPanelIn")
+        layer.add(group, forKey: "pasteletPanelIn")
         CATransaction.commit()
     }
 
-    private func animateContentLayerOut(_ panel: VellumPanel, token: Int) {
+    private func animateContentLayerOut(_ panel: PasteletPanel, token: Int) {
         guard let contentView = panel.contentView, let layer = contentView.layer else {
             panelState = .hidden
             panel.orderOut(nil)
@@ -335,7 +335,7 @@ final class ClipboardPanelController {
         layer.removeAllAnimations()
         layer.opacity = 0
         layer.transform = CATransform3DMakeTranslation(0, offset, 0)
-        layer.add(group, forKey: "vellumPanelOut")
+        layer.add(group, forKey: "pasteletPanelOut")
         CATransaction.commit()
     }
 
@@ -352,7 +352,7 @@ final class ClipboardPanelController {
                 if event.window == self.panel, let contentView = self.panel?.contentView {
                     let toolbarBandHeight: CGFloat = 64
                     if event.locationInWindow.y < contentView.bounds.height - toolbarBandHeight {
-                        NotificationCenter.default.post(name: .vellumNavCancelSearch, object: nil)
+                        NotificationCenter.default.post(name: .pasteletNavCancelSearch, object: nil)
                     }
                 }
                 return event
@@ -360,25 +360,25 @@ final class ClipboardPanelController {
 
             // Cmd+F：唤起并聚焦搜索框；已在搜索中再按则切换「来源 / 类型」过滤菜单
             if event.modifierFlags.contains(.command), event.keyCode == 3 {
-                NotificationCenter.default.post(name: .vellumNavStartSearch, object: nil)
+                NotificationCenter.default.post(name: .pasteletNavStartSearch, object: nil)
                 return nil
             }
 
             if self.isTextEditing(event) {
                 if event.keyCode == 53 {
-                    NotificationCenter.default.post(name: .vellumNavEscape, object: nil)
+                    NotificationCenter.default.post(name: .pasteletNavEscape, object: nil)
                     return nil
                 }
                 return event
             }
 
             if AppSettings.shared.previousItemShortcut?.matches(event) == true {
-                NotificationCenter.default.post(name: .vellumNavLeft, object: nil)
+                NotificationCenter.default.post(name: .pasteletNavLeft, object: nil)
                 return nil
             }
 
             if AppSettings.shared.nextItemShortcut?.matches(event) == true {
-                NotificationCenter.default.post(name: .vellumNavRight, object: nil)
+                NotificationCenter.default.post(name: .pasteletNavRight, object: nil)
                 return nil
             }
 
@@ -387,16 +387,16 @@ final class ClipboardPanelController {
                 self.hide()
                 return nil
             case 51, 117:
-                NotificationCenter.default.post(name: .vellumNavDelete, object: nil)
+                NotificationCenter.default.post(name: .pasteletNavDelete, object: nil)
                 return nil
             case 123:
-                NotificationCenter.default.post(name: .vellumNavLeft, object: nil)
+                NotificationCenter.default.post(name: .pasteletNavLeft, object: nil)
                 return nil
             case 124:
-                NotificationCenter.default.post(name: .vellumNavRight, object: nil)
+                NotificationCenter.default.post(name: .pasteletNavRight, object: nil)
                 return nil
             case 36, 76:
-                NotificationCenter.default.post(name: .vellumNavSelect, object: nil)
+                NotificationCenter.default.post(name: .pasteletNavSelect, object: nil)
                 return nil
             default:
                 return event
@@ -431,7 +431,7 @@ final class ClipboardPanelController {
 
 }
 
-final class VellumPanel: NSPanel {
+final class PasteletPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 }

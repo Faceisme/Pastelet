@@ -2,11 +2,11 @@ import AppKit
 import Carbon
 import Foundation
 
-struct VellumKeyboardShortcut: Equatable {
+struct PasteletKeyboardShortcut: Equatable {
     var keyCode: UInt32
     var modifiers: NSEvent.ModifierFlags
 
-    static let defaultLaunch = VellumKeyboardShortcut(
+    static let defaultLaunch = PasteletKeyboardShortcut(
         keyCode: UInt32(kVK_ANSI_V),
         modifiers: [.command, .shift]
     )
@@ -119,7 +119,7 @@ struct VellumKeyboardShortcut: Equatable {
     }
 }
 
-enum VellumModifierKey: String, CaseIterable, Identifiable {
+enum PasteletModifierKey: String, CaseIterable, Identifiable {
     case command
     case shift
     case option
