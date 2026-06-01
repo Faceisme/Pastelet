@@ -54,7 +54,7 @@ final class ClipboardPanelController {
 
     func show() {
         guard panelState != .showing, panelState != .visible else { return }
-        NotificationCenter.default.post(name: .pasteletPanelResetSearch, object: nil)
+        NotificationCenter.default.post(name: .pasteletPanelResetState, object: nil)
 
         // 记录“当前正在用的 App”，必须在激活自己之前抓
         let frontmost = NSWorkspace.shared.frontmostApplication
@@ -98,7 +98,7 @@ final class ClipboardPanelController {
         animationToken += 1
         let token = animationToken
         panelState = .hiding
-        NotificationCenter.default.post(name: .pasteletPanelResetSearch, object: nil)
+        NotificationCenter.default.post(name: .pasteletPanelResetState, object: nil)
 
         removeEventMonitors()
 

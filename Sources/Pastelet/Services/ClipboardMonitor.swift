@@ -159,9 +159,21 @@ final class ClipboardMonitor: ObservableObject {
 
         lastChangeCount = pasteboard.changeCount
 
+        moveRestoredItemToFront(item)
+
         if AppSettings.shared.soundEnabled {
             NSSound(named: "Pop")?.play()
         }
+    }
+
+    private func moveRestoredItemToFront(_ item: ClipboardItem) {
+        let index = items.firstIndex { $0.id == item.id }
+            ?? items.firstIndex { $0.fingerprint == item.fingerprint }
+        guard let index, index > 0 else { return }
+
+        let restored = items.remove(at: index)
+        items.insert(restored, at: 0)
+        saveSoon()
     }
 
     private func pollPasteboard() {

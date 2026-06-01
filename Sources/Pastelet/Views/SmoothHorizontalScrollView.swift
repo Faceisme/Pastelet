@@ -8,6 +8,7 @@ struct SmoothHorizontalScrollView<Content: View, ContentSignature: Equatable>: N
 
     let selectedIndex: Int
     let scrollRequest: Int
+    let resetRequest: Int
     let contentSignature: ContentSignature
     let itemCount: Int
     let itemWidth: CGFloat
@@ -17,6 +18,7 @@ struct SmoothHorizontalScrollView<Content: View, ContentSignature: Equatable>: N
     init(
         selectedIndex: Int,
         scrollRequest: Int,
+        resetRequest: Int,
         contentSignature: ContentSignature,
         itemCount: Int,
         itemWidth: CGFloat,
@@ -25,6 +27,7 @@ struct SmoothHorizontalScrollView<Content: View, ContentSignature: Equatable>: N
     ) {
         self.selectedIndex = selectedIndex
         self.scrollRequest = scrollRequest
+        self.resetRequest = resetRequest
         self.contentSignature = contentSignature
         self.itemCount = itemCount
         self.itemWidth = itemWidth
@@ -70,6 +73,7 @@ struct SmoothHorizontalScrollView<Content: View, ContentSignature: Equatable>: N
         scrollView.contentWidth = contentWidth()
         context.coordinator.hostingView = hostingView
         context.coordinator.lastContentSignature = contentSignature
+        context.coordinator.lastResetRequest = resetRequest
         return scrollView
     }
 
@@ -87,6 +91,11 @@ struct SmoothHorizontalScrollView<Content: View, ContentSignature: Equatable>: N
             scrollView.contentWidth = width // 内容宽变化 -> 触发重新 layout
         }
 
+        if context.coordinator.lastResetRequest != resetRequest {
+            context.coordinator.lastResetRequest = resetRequest
+            scrollView.scrollToLeading()
+        }
+
         if context.coordinator.lastScrollRequest != scrollRequest {
             context.coordinator.lastScrollRequest = scrollRequest
             scrollView.scrollToIndex(
@@ -102,6 +111,7 @@ struct SmoothHorizontalScrollView<Content: View, ContentSignature: Equatable>: N
         var hostingView: NSHostingView<Content>?
         var lastContentSignature: ContentSignature?
         var lastScrollRequest = 0
+        var lastResetRequest = 0
     }
 }
 
@@ -190,6 +200,14 @@ final class PasteletSmoothScrollView: NSScrollView {
                 self.reflectScrolledClipView(self.contentView)
             }
         }
+        reflectScrolledClipView(contentView)
+    }
+
+    func scrollToLeading() {
+        targetX = 0
+        isAnimatingWheel = false
+        contentView.layer?.removeAllAnimations()
+        contentView.setBoundsOrigin(NSPoint(x: 0, y: 0))
         reflectScrolledClipView(contentView)
     }
 

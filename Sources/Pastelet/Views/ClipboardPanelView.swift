@@ -17,8 +17,9 @@ struct ClipboardPanelView: View {
     @State private var searchFocusRequest = 0
     @State private var searchResetRequest = 0
     @State private var showFavoritesOnly = false
-    @State private var selectedIndex = 0
+    @State private var selectedIndex: Int?
     @State private var keyboardScrollRequest = 0
+    @State private var timelineResetRequest = 0
     /// 二次过滤：来源 App（按 sourceAppName）与类型（kind），与文本搜索、收藏叠加生效
     @State private var sourceFilter: String? = nil
     @State private var kindFilter: ClipboardKind? = nil
@@ -90,8 +91,8 @@ struct ClipboardPanelView: View {
     }
 
     /// 选中下标钳制在有效范围内（按给定数量，避免重复计算 filteredItems）
-    private func clampedSelection(count: Int) -> Int {
-        guard count > 0 else { return 0 }
+    private func clampedSelection(count: Int) -> Int? {
+        guard count > 0, let selectedIndex else { return nil }
         return min(max(0, selectedIndex), count - 1)
     }
 
@@ -99,7 +100,7 @@ struct ClipboardPanelView: View {
 
     private struct TimelineContentSignature: Equatable {
         let items: [TimelineItemSignature]
-        let selectedIndex: Int
+        let selectedIndex: Int?
         let query: String
     }
 
@@ -171,8 +172,8 @@ struct ClipboardPanelView: View {
                 collapseSearch()
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .pasteletPanelResetSearch)) { _ in
-            resetSearchState()
+        .onReceive(NotificationCenter.default.publisher(for: .pasteletPanelResetState)) { _ in
+            resetPanelState()
         }
         .task(id: searchText) {
             // 清空立即生效；输入时等 150ms 再过滤，打字过程不触发卡片重建
@@ -191,7 +192,8 @@ struct ClipboardPanelView: View {
     private func moveSelection(_ delta: Int, requestScroll: Bool = false) {
         let count = filteredItems.count
         guard count > 0 else { return }
-        selectedIndex = min(max(0, clampedSelection(count: count) + delta), count - 1)
+        let current = clampedSelection(count: count)
+        selectedIndex = current.map { min(max(0, $0 + delta), count - 1) } ?? 0
         if requestScroll {
             keyboardScrollRequest += 1
         }
@@ -199,19 +201,20 @@ struct ClipboardPanelView: View {
 
     private func deleteSelected() {
         let items = filteredItems
-        guard !items.isEmpty else { return }
-        let target = items[clampedSelection(count: items.count)]
+        guard let selection = clampedSelection(count: items.count) else { return }
+        let target = items[selection]
         withAnimation(.easeOut(duration: 0.18)) {
             monitor.delete(target)
         }
         // 删除后选中项停在原位（即原来的下一项），并钳制范围
-        selectedIndex = min(selectedIndex, max(0, items.count - 2))
+        let nextCount = items.count - 1
+        selectedIndex = nextCount > 0 ? min(selection, nextCount - 1) : nil
     }
 
     private func selectCurrent() {
         let items = filteredItems
-        guard !items.isEmpty else { return }
-        onSelect(items[clampedSelection(count: items.count)])
+        guard let selection = clampedSelection(count: items.count) else { return }
+        onSelect(items[selection])
     }
 
     private func expandSearch() {
@@ -225,14 +228,17 @@ struct ClipboardPanelView: View {
         searchFocusRequest += 1
     }
 
-    private func resetSearchState() {
+    private func resetPanelState() {
         isSearching = false
         searchText = ""
         debouncedQuery = ""
+        showFavoritesOnly = false
         showFilterMenu = false
         sourceFilter = nil
         kindFilter = nil
+        selectedIndex = nil
         searchResetRequest += 1
+        timelineResetRequest += 1
     }
 
     private var toolbar: some View {
@@ -265,10 +271,10 @@ struct ClipboardPanelView: View {
             availableKinds: { availableKinds },
             availableSources: { availableSources },
             onClipboardSelected: {
-                selectedIndex = 0
+                resetTimelinePosition()
             },
             onFavoritesSelected: {
-                selectedIndex = 0
+                resetTimelinePosition()
             },
             onSearchCancelled: {
                 collapseSearch()
@@ -291,6 +297,11 @@ struct ClipboardPanelView: View {
         }
     }
 
+    private func resetTimelinePosition() {
+        selectedIndex = nil
+        timelineResetRequest += 1
+    }
+
     private var moreMenu: some View {
         Menu {
             Button("打开设置", action: onSettings)
@@ -308,10 +319,11 @@ struct ClipboardPanelView: View {
         .help("更多")
     }
 
-    private func timeline(items: [ClipboardItem], selection: Int, query: String) -> some View {
+    private func timeline(items: [ClipboardItem], selection: Int?, query: String) -> some View {
         SmoothHorizontalScrollView(
-            selectedIndex: selection,
+            selectedIndex: selection ?? 0,
             scrollRequest: keyboardScrollRequest,
+            resetRequest: timelineResetRequest,
             contentSignature: timelineSignature(items: items, selection: selection, query: query),
             itemCount: items.count,
             itemWidth: 232,
@@ -332,9 +344,7 @@ struct ClipboardPanelView: View {
                                 monitor.delete(item)
                             }
                         },
-                        onHoverChanged: { hovering in
-                            if hovering { selectedIndex = index }
-                        }
+                        onHoverChanged: { _ in }
                     )
                     .id(item.id)
                 }
@@ -347,7 +357,7 @@ struct ClipboardPanelView: View {
 
     private func timelineSignature(
         items: [ClipboardItem],
-        selection: Int,
+        selection: Int?,
         query: String
     ) -> TimelineContentSignature {
         TimelineContentSignature(
