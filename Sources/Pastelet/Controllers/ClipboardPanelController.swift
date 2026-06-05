@@ -77,9 +77,10 @@ final class ClipboardPanelController {
             continuingCurrentAnimation: shouldContinueFromCurrentAnimation
         )
         panel.alphaValue = 1
-        panel.makeKeyAndOrderFront(nil)
-        panel.contentView?.displayIfNeeded()
         NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+        panel.orderFrontRegardless()
+        panel.contentView?.displayIfNeeded()
         installEventMonitors()
         DispatchQueue.main.async { [weak panel] in
             guard let panel, panel.isVisible else { return }
@@ -189,7 +190,8 @@ final class ClipboardPanelController {
         panel.isOpaque = false
         panel.hasShadow = false
         panel.animationBehavior = .none
-        panel.level = .statusBar
+        panel.level = .screenSaver
+        panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         panel.isReleasedWhenClosed = false
         return panel
