@@ -155,7 +155,6 @@ struct ClipboardPanelView: View {
                         lineWidth: 1
                     )
             }
-            .shadow(color: .black.opacity(0.22), radius: 26, x: 0, y: 11)
 
             VStack(spacing: 0) {
                 toolbar
@@ -320,8 +319,7 @@ struct ClipboardPanelView: View {
 
     private var toolbar: some View {
         HStack(spacing: 14) {
-            toolbarPlainIcon("arrow.clockwise", size: 15, help: "刷新剪贴板") {}
-                .opacity(0.55)
+            Color.clear
                 .frame(width: 34, height: 34)
 
             Spacer(minLength: 20)
@@ -482,40 +480,4 @@ struct ClipboardPanelView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func toolbarPlainIcon(
-        _ symbol: String,
-        size: CGFloat,
-        help: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        ToolbarIconButton(symbol: symbol, size: size, help: help, action: action)
-    }
-}
-
-private struct ToolbarIconButton: View {
-    let symbol: String
-    let size: CGFloat
-    let help: String
-    let action: () -> Void
-
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: size, weight: .regular))
-                .frame(width: 38, height: 38)
-                .contentShape(Rectangle())
-                .background(iconBackground, in: Circle())
-        }
-        .buttonStyle(PasteletPressButtonStyle(pressedScale: 0.86, pressedOpacity: 0.78))
-        .foregroundStyle(Color(nsColor: .labelColor).opacity(0.92))
-        .onHover { isHovered = $0 }
-        .animation(.spring(response: 0.18, dampingFraction: 0.82), value: isHovered)
-        .help(help)
-    }
-
-    private var iconBackground: Color {
-        Color(nsColor: .controlColor).opacity(isHovered ? 0.42 : 0)
-    }
 }

@@ -187,7 +187,7 @@ final class ClipboardPanelController {
         panel.contentView = hostingView
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        panel.hasShadow = false  // 阴影画在内容层里，跟随底部弹出动画一起移动
+        panel.hasShadow = false
         panel.animationBehavior = .none
         panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
