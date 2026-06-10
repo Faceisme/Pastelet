@@ -184,6 +184,10 @@ struct ClipboardPanelView: View {
         .onReceive(NotificationCenter.default.publisher(for: .pasteletNavStartSearch)) { _ in
             expandSearch()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .pasteletNavTypeSearch)) { notification in
+            guard let text = notification.object as? String else { return }
+            typeIntoSearch(text)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .pasteletNavCancelSearch)) { _ in
             // 点击下方卡片区即收起；过滤菜单开着时先让它消化这次点击（关闭弹层），不收起搜索
             if isSearching && !showFilterMenu {
@@ -300,6 +304,16 @@ struct ClipboardPanelView: View {
         }
 
         isSearching = true
+        searchFocusRequest += 1
+    }
+
+    private func typeIntoSearch(_ text: String) {
+        guard !text.isEmpty else { return }
+        if !isSearching {
+            isSearching = true
+        }
+        showFilterMenu = false
+        searchText += text
         searchFocusRequest += 1
     }
 

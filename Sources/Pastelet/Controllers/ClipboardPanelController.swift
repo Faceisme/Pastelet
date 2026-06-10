@@ -389,6 +389,11 @@ final class ClipboardPanelController {
                 return nil
             }
 
+            if let searchText = searchText(from: event) {
+                NotificationCenter.default.post(name: .pasteletNavTypeSearch, object: searchText)
+                return nil
+            }
+
             switch event.keyCode {
             case 53:
                 self.hide()
@@ -434,6 +439,22 @@ final class ClipboardPanelController {
 
         let typeName = String(describing: type(of: responder))
         return typeName.contains("FieldEditor") || typeName.contains("Text")
+    }
+
+    private func searchText(from event: NSEvent) -> String? {
+        let nonSearchKeyCodes: Set<UInt16> = [
+            36, 48, 49, 51, 53, 76, 96, 97, 98, 99, 100, 101, 103, 109,
+            111, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124,
+            125, 126
+        ]
+        guard !nonSearchKeyCodes.contains(event.keyCode) else { return nil }
+
+        let reservedModifiers: NSEvent.ModifierFlags = [.command, .control, .option]
+        guard event.modifierFlags.intersection(reservedModifiers).isEmpty else { return nil }
+        guard let characters = event.characters, !characters.isEmpty else { return nil }
+        guard characters.rangeOfCharacter(from: .controlCharacters) == nil else { return nil }
+        guard !characters.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return characters
     }
 
 }

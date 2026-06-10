@@ -10,6 +10,7 @@ extension Notification.Name {
     static let pasteletNavEscape = Notification.Name("pastelet.nav.escape")
     static let pasteletNavScroll = Notification.Name("pastelet.nav.scroll")
     static let pasteletNavStartSearch = Notification.Name("pastelet.nav.startSearch")
+    static let pasteletNavTypeSearch = Notification.Name("pastelet.nav.typeSearch")
     static let pasteletNavCancelSearch = Notification.Name("pastelet.nav.cancelSearch")
     static let pasteletPanelResetState = Notification.Name("pastelet.panel.resetState")
 }
