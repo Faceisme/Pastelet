@@ -198,7 +198,11 @@ final class ClipboardPanelController {
     }
 
     private func frameForPanel() -> NSRect {
-        let screen = NSScreen.main ?? NSScreen.screens.first
+        // 多显示器：面板弹在鼠标所在的屏幕（用户正在操作的地方），而不是固定主屏
+        let mouseLocation = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { NSMouseInRect(mouseLocation, $0.frame, false) }
+            ?? NSScreen.main
+            ?? NSScreen.screens.first
         let screenFrame = screen?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let width = min(screenFrame.width - 12, 2048)
         let height: CGFloat = 330
@@ -361,7 +365,9 @@ final class ClipboardPanelController {
             }
 
             // Cmd+F：唤起并聚焦搜索框；已在搜索中再按则切换「来源 / 类型」过滤菜单
-            if event.modifierFlags.contains(.command), event.keyCode == 3 {
+            // 按字符而非 keyCode 判断，Dvorak/AZERTY 等非 QWERTY 布局下才是真正的 F/Z 键
+            if event.modifierFlags.contains(.command),
+               event.charactersIgnoringModifiers?.lowercased() == "f" {
                 NotificationCenter.default.post(name: .pasteletNavStartSearch, object: nil)
                 return nil
             }
@@ -374,7 +380,8 @@ final class ClipboardPanelController {
                 return event
             }
 
-            if event.modifierFlags.contains(.command), event.keyCode == 6 {
+            if event.modifierFlags.contains(.command),
+               event.charactersIgnoringModifiers?.lowercased() == "z" {
                 NotificationCenter.default.post(name: .pasteletNavUndoDelete, object: nil)
                 return nil
             }
@@ -386,6 +393,13 @@ final class ClipboardPanelController {
 
             if AppSettings.shared.nextItemShortcut?.matches(event) == true {
                 NotificationCenter.default.post(name: .pasteletNavRight, object: nil)
+                return nil
+            }
+
+            // 快速粘贴：修饰键 + 1…9 直接粘贴时间线上对应序号的项目。
+            // 必须在键盘搜索之前拦截，否则数字会被当成搜索输入吞掉。
+            if let number = self.quickPasteNumber(from: event) {
+                NotificationCenter.default.post(name: .pasteletNavQuickPaste, object: number)
                 return nil
             }
 
@@ -439,6 +453,18 @@ final class ClipboardPanelController {
 
         let typeName = String(describing: type(of: responder))
         return typeName.contains("FieldEditor") || typeName.contains("Text")
+    }
+
+    /// 主键盘区 1…9 的 keyCode（ANSI 布局物理位置固定，不随修饰键变化）
+    private static let digitKeyCodes: [UInt16: Int] = [
+        18: 1, 19: 2, 20: 3, 21: 4, 23: 5, 22: 6, 26: 7, 28: 8, 25: 9
+    ]
+
+    private func quickPasteNumber(from event: NSEvent) -> Int? {
+        let required = AppSettings.shared.quickPasteModifier.flag
+        let pressed = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        guard pressed == required else { return nil }
+        return Self.digitKeyCodes[event.keyCode]
     }
 
     private func searchText(from event: NSEvent) -> String? {

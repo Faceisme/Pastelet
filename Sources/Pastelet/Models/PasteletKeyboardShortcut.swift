@@ -135,4 +135,13 @@ enum PasteletModifierKey: String, CaseIterable, Identifiable {
         case .control: "⌃ Control"
         }
     }
+
+    var flag: NSEvent.ModifierFlags {
+        switch self {
+        case .command: .command
+        case .shift: .shift
+        case .option: .option
+        case .control: .control
+        }
+    }
 }

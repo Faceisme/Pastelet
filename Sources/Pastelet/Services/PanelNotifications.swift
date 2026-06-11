@@ -7,6 +7,8 @@ extension Notification.Name {
     static let pasteletNavDelete = Notification.Name("pastelet.nav.delete")
     static let pasteletNavUndoDelete = Notification.Name("pastelet.nav.undoDelete")
     static let pasteletNavSelect = Notification.Name("pastelet.nav.select")
+    /// 快速粘贴第 N 个项目（object 为 1...9 的 Int）
+    static let pasteletNavQuickPaste = Notification.Name("pastelet.nav.quickPaste")
     static let pasteletNavEscape = Notification.Name("pastelet.nav.escape")
     static let pasteletNavScroll = Notification.Name("pastelet.nav.scroll")
     static let pasteletNavStartSearch = Notification.Name("pastelet.nav.startSearch")

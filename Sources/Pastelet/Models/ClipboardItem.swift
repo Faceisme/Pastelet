@@ -49,7 +49,8 @@ struct ClipboardItem: Identifiable, Equatable {
     let sourceBundleIdentifier: String?
     let sourceIcon: NSImage?
     let createdAt: Date
-    let fingerprint: String
+    /// 内容指纹；仅在启动迁移旧格式指纹时会被改写
+    var fingerprint: String
     var isFavorite: Bool = false
     /// 原始富文本（RTF）数据，用于非“纯文本”模式下保留格式粘贴
     var richRTFData: Data? = nil

@@ -214,13 +214,6 @@ struct SettingsView: View {
                     clearable: true,
                     requiresModifier: true
                 )
-                ThinDivider()
-                EditableShortcutRow(
-                    title: "启动 Pastelet Stack",
-                    shortcut: $settings.stackShortcut,
-                    clearable: true,
-                    requiresModifier: true
-                )
             }
 
             SettingsCard {
@@ -242,14 +235,13 @@ struct SettingsView: View {
             SettingsCard {
                 ModifierRow(title: "快速粘贴", selection: $settings.quickPasteModifier, suffix: "+  1…9")
                 ThinDivider()
-                ModifierRow(title: "纯文本模式", selection: $settings.plainTextModifier, suffix: nil)
+                ModifierRow(title: "纯文本模式", selection: $settings.plainTextModifier, suffix: "+  粘贴")
             }
 
             HStack {
                 Spacer()
                 Button("将快捷方式重置为默认…") {
                     settings.launchShortcut = .defaultLaunch
-                    settings.stackShortcut = nil
                     settings.nextItemShortcut = nil
                     settings.previousItemShortcut = nil
                     settings.quickPasteModifier = .command

@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import UniformTypeIdentifiers
 
 /// 把剪贴板历史持久化到 App 容器：
@@ -61,7 +62,7 @@ final class HistoryStore {
 
         // 仅对“还没写过盘”的新图片落盘：优先直接写剪贴板原始字节（免主线程把大图重新编码），
         // 没有原始字节时（如文件图片的缩略图预览）才回退到对缩略图编码 PNG。
-        // 注：文件名固定 .png，但原始字节可能是 png/tiff —— NSImage(contentsOf:) 按内容识别，读取不受影响。
+        // 非 PNG 原始字节会在后台写盘时统一转码成 PNG（见 pngEncodedIfNeeded）。
         var newImages: [(filename: String, data: Data)] = []
         var referenced: Set<String> = []
         for item in items where item.image != nil {
@@ -77,7 +78,13 @@ final class HistoryStore {
         saveCounter += 1
         // 清空历史时立即清理孤儿，其余情况降频执行
         let shouldCleanOrphans = stored.isEmpty || saveCounter % Self.orphanCleanupInterval == 0
-        if stored.isEmpty { writtenImageFilenames.removeAll() }
+        if stored.isEmpty {
+            writtenImageFilenames.removeAll()
+        } else if shouldCleanOrphans {
+            // 清理会删掉所有未被引用的图片文件，缓存必须同步收缩：否则之后重复复制同一张图
+            // （指纹相同）会误以为文件还在而跳过写盘，原图就永久丢失了
+            writtenImageFilenames.formIntersection(referenced)
+        }
 
         // 只捕获 Sendable 值类型（URL/数组/Set/Bool）的不可变副本，不捕获 self，避免数据竞争
         let imagesDirectory = self.imagesDirectory
@@ -112,11 +119,11 @@ final class HistoryStore {
     ) {
         let fileManager = FileManager.default
 
-        // 写新图片
+        // 写新图片（非 PNG 字节先转码，TIFF 普遍无压缩、体积可达 PNG 的数倍）
         for image in newImages {
             let url = imagesDirectory.appendingPathComponent(image.filename)
             do {
-                try image.data.write(to: url, options: .atomic)
+                try pngEncodedIfNeeded(image.data).write(to: url, options: .atomic)
             } catch {
                 NSLog("Pastelet: 写入图片失败 \(url.lastPathComponent): \(error.localizedDescription)")
             }
@@ -137,6 +144,30 @@ final class HistoryStore {
                 try? fileManager.removeItem(at: imagesDirectory.appendingPathComponent(file))
             }
         }
+    }
+
+    /// 后台队列执行：剪贴板给的原始字节若不是 PNG（多为无压缩 TIFF）就转码成 PNG 再落盘。
+    /// 全程走线程安全的 ImageIO，不碰 NSImage；转码失败则原样写入兜底。
+    nonisolated private static func pngEncodedIfNeeded(_ data: Data) -> Data {
+        let pngMagic: [UInt8] = [0x89, 0x50, 0x4E, 0x47]
+        guard data.count >= 4, !data.prefix(4).elementsEqual(pngMagic) else { return data }
+
+        guard
+            let source = CGImageSourceCreateWithData(data as CFData, nil),
+            let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil)
+        else { return data }
+
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            output,
+            UTType.png.identifier as CFString,
+            1,
+            nil
+        ) else { return data }
+
+        CGImageDestinationAddImage(destination, cgImage, nil)
+        guard CGImageDestinationFinalize(destination) else { return data }
+        return output as Data
     }
 
     /// 粘贴时按需加载某个指纹对应的全分辨率原图（内存里只留缩略图）
@@ -212,9 +243,7 @@ final class HistoryStore {
     }
 
     private func imageFilename(for fingerprint: String) -> String {
-        let safe = fingerprint.unicodeScalars
-            .map { CharacterSet.alphanumerics.contains($0) ? Character($0) : "_" }
-        return String(safe).prefix(180) + ".png"
+        StoredItem.imageFilename(for: fingerprint)
     }
 
     private func pngData(_ image: NSImage) -> Data? {

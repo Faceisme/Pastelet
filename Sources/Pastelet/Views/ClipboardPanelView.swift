@@ -180,6 +180,10 @@ struct ClipboardPanelView: View {
         .onReceive(NotificationCenter.default.publisher(for: .pasteletNavDelete)) { _ in deleteSelected() }
         .onReceive(NotificationCenter.default.publisher(for: .pasteletNavUndoDelete)) { _ in undoDelete() }
         .onReceive(NotificationCenter.default.publisher(for: .pasteletNavSelect)) { _ in selectCurrent() }
+        .onReceive(NotificationCenter.default.publisher(for: .pasteletNavQuickPaste)) { notification in
+            guard let number = notification.object as? Int else { return }
+            quickPaste(number)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .pasteletNavEscape)) { _ in collapseSearch() }
         .onReceive(NotificationCenter.default.publisher(for: .pasteletNavStartSearch)) { _ in
             expandSearch()
@@ -294,6 +298,13 @@ struct ClipboardPanelView: View {
         let items = filteredItems
         guard let selection = clampedSelection(count: items.count) else { return }
         onSelect(items[selection])
+    }
+
+    /// 快速粘贴第 N 项（与卡片右下角显示的序号一致，即当前过滤结果里的位置）
+    private func quickPaste(_ number: Int) {
+        let items = filteredItems
+        guard number >= 1, number <= items.count else { return }
+        onSelect(items[number - 1])
     }
 
     private func expandSearch() {

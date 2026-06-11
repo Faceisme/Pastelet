@@ -31,11 +31,6 @@ final class AppSettings: ObservableObject, @unchecked Sendable {
         didSet { saveShortcut(launchShortcut, keyPrefix: Keys.launchShortcutPrefix) }
     }
 
-    /// 预留：Pastelet Stack 快捷键。
-    @Published var stackShortcut: PasteletKeyboardShortcut? {
-        didSet { saveShortcut(stackShortcut, keyPrefix: Keys.stackShortcutPrefix) }
-    }
-
     /// 面板内显示下一个项目。
     @Published var nextItemShortcut: PasteletKeyboardShortcut? {
         didSet { saveShortcut(nextItemShortcut, keyPrefix: Keys.nextItemShortcutPrefix) }
@@ -86,7 +81,6 @@ final class AppSettings: ObservableObject, @unchecked Sendable {
         static let soundEnabled = "pastelet.soundEnabled"
         static let hideMenuBarIcon = "pastelet.hideMenuBarIcon"
         static let launchShortcutPrefix = "pastelet.shortcut.launch"
-        static let stackShortcutPrefix = "pastelet.shortcut.stack"
         static let nextItemShortcutPrefix = "pastelet.shortcut.nextItem"
         static let previousItemShortcutPrefix = "pastelet.shortcut.previousItem"
         static let quickPasteModifier = "pastelet.shortcut.quickPasteModifier"
@@ -110,7 +104,6 @@ final class AppSettings: ObservableObject, @unchecked Sendable {
         soundEnabled = defaults.bool(forKey: Keys.soundEnabled)
         hideMenuBarIcon = defaults.bool(forKey: Keys.hideMenuBarIcon)
         launchShortcut = Self.loadShortcut(from: defaults, keyPrefix: Keys.launchShortcutPrefix)
-        stackShortcut = Self.loadShortcut(from: defaults, keyPrefix: Keys.stackShortcutPrefix)
         nextItemShortcut = Self.loadShortcut(from: defaults, keyPrefix: Keys.nextItemShortcutPrefix)
         previousItemShortcut = Self.loadShortcut(from: defaults, keyPrefix: Keys.previousItemShortcutPrefix)
         quickPasteModifier = PasteletModifierKey(rawValue: defaults.string(forKey: Keys.quickPasteModifier) ?? "") ?? .command

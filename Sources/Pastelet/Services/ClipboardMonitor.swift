@@ -30,28 +30,37 @@ final class ClipboardMonitor: ObservableObject {
     func start() {
         items = store.load()
         NSLog("Pastelet: 启动加载历史 \(items.count) 条")
+        migrateLegacyTextFingerprints()
         pruneExpired()
         captureCurrentPasteboard()
 
-        // 高频定时器只做剪贴板变化检测，尽量轻
-        timer = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: true) { [weak self] _ in
+        // 高频定时器只做剪贴板变化检测，尽量轻。
+        // 用 .common mode：菜单/模态弹窗打开期间默认 mode 的定时器会暂停，期间的复制会漏录
+        let pollTimer = Timer(timeInterval: 0.7, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.pollPasteboard()
             }
         }
-        timer?.tolerance = 0.2
+        pollTimer.tolerance = 0.2
+        RunLoop.main.add(pollTimer, forMode: .common)
+        timer = pollTimer
 
         // 过期清理改为低频（每 60s），不再跟随高频轮询空转
-        pruneTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        let expiryTimer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.pruneExpired()
             }
         }
-        pruneTimer?.tolerance = 15
+        expiryTimer.tolerance = 15
+        RunLoop.main.add(expiryTimer, forMode: .common)
+        pruneTimer = expiryTimer
     }
 
     func clear() {
         items.removeAll()
+        // 收藏指纹一并清空，否则之后复制到相同内容会“自动恢复收藏”，与“删除全部”的承诺不符
+        favoriteFingerprints.removeAll()
+        UserDefaults.standard.removeObject(forKey: Self.favoritesKey)
         flushNow()
     }
 
@@ -156,8 +165,12 @@ final class ClipboardMonitor: ObservableObject {
         case .file:
             pasteboard.writeObjects(item.fileURLs as [NSURL])
         case .text, .code, .link, .color:
-            // 非纯文本模式且存在富文本时，保留 RTF 格式
-            if !AppSettings.shared.alwaysPlainText, let rtf = item.richRTFData {
+            // 非纯文本模式且存在富文本时，保留 RTF 格式；
+            // 粘贴瞬间按住「纯文本模式」修饰键（默认 ⇧）可单次强制纯文本
+            let holdingPlainTextModifier = NSEvent.modifierFlags
+                .intersection([.command, .shift, .option, .control])
+                .contains(AppSettings.shared.plainTextModifier.flag)
+            if !AppSettings.shared.alwaysPlainText, !holdingPlainTextModifier, let rtf = item.richRTFData {
                 pasteboard.setData(rtf, forType: .rtf)
             }
             if let text = item.rawText {
@@ -196,6 +209,15 @@ final class ClipboardMonitor: ObservableObject {
         guard var item = makeItem(from: NSPasteboard.general) else { return }
         guard items.first?.fingerprint != item.fingerprint else { return }
 
+        // 历史里已有相同内容（如从源 App 重新复制）：把旧条目搬到首位，
+        // 保留它的收藏状态与已补全的链接预览，不产生重复卡片
+        if let existingIndex = items.firstIndex(where: { $0.fingerprint == item.fingerprint }) {
+            let existing = items.remove(at: existingIndex)
+            items.insert(existing, at: 0)
+            saveSoon()
+            return
+        }
+
         item.isFavorite = favoriteFingerprints.contains(item.fingerprint)
 
         items.insert(item, at: 0)
@@ -210,7 +232,19 @@ final class ClipboardMonitor: ObservableObject {
         saveSoon()
     }
 
+    /// 密码管理器等会给剪贴板打的约定标记：Concealed = 密码等敏感内容，Transient = 临时内容。
+    /// 剪贴板工具的通行规范是这两类一律不记录。
+    private static let ignoredPasteboardTypes: [NSPasteboard.PasteboardType] = [
+        NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"),
+        NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
+    ]
+
     private func makeItem(from pasteboard: NSPasteboard) -> ClipboardItem? {
+        if let types = pasteboard.types,
+           Self.ignoredPasteboardTypes.contains(where: types.contains) {
+            return nil
+        }
+
         let source = NSWorkspace.shared.frontmostApplication
         let sourceName = source?.localizedName ?? "未知应用"
         let sourceBundleIdentifier = source?.bundleIdentifier
@@ -421,9 +455,55 @@ final class ClipboardMonitor: ObservableObject {
             sourceBundleIdentifier: sourceBundleIdentifier,
             sourceIcon: sourceIcon,
             createdAt: Date(),
-            fingerprint: "\(kind.rawValue):\(text)",
+            fingerprint: Self.textFingerprint(kind: kind, text: text),
             richRTFData: (kind == .text || kind == .code) ? boundedRTF : nil
         )
+    }
+
+    /// 文本类指纹用内容哈希而非全文：收藏指纹要存 UserDefaults，
+    /// 全文会让 defaults 无界膨胀，且把敏感内容明文多存一份
+    private static func textFingerprint(kind: ClipboardKind, text: String) -> String {
+        "\(kind.rawValue):\(Data(text.utf8).pasteletContentHash)"
+    }
+
+    /// 旧版文本类指纹是「kind:全文」，启动时一次性迁移为「kind:哈希」，收藏标记跟随迁移。
+    /// 图片/文件指纹保持原样（图片落盘文件名由指纹推导，改动会断开与已存原图的关联）。
+    private func migrateLegacyTextFingerprints() {
+        let textKinds: Set<ClipboardKind> = [.text, .code, .link, .color]
+        var itemsChanged = false
+        var favoritesChanged = false
+
+        for index in items.indices {
+            let item = items[index]
+            guard textKinds.contains(item.kind), let text = item.rawText else { continue }
+            let migrated = Self.textFingerprint(kind: item.kind, text: text)
+            guard migrated != item.fingerprint else { continue }
+            if favoriteFingerprints.remove(item.fingerprint) != nil {
+                favoriteFingerprints.insert(migrated)
+                favoritesChanged = true
+            }
+            items[index].fingerprint = migrated
+            itemsChanged = true
+        }
+
+        // 旧格式且已无对应条目的收藏指纹永远不会再命中，清掉以免全文常驻 defaults
+        let legacyPrefixes = textKinds.map { "\($0.rawValue):" }
+        let pruned = favoriteFingerprints.filter { fingerprint in
+            guard let prefix = legacyPrefixes.first(where: fingerprint.hasPrefix) else { return true }
+            let digest = fingerprint.dropFirst(prefix.count)
+            return digest.count == 32 && digest.allSatisfy(\.isHexDigit)
+        }
+        if pruned.count != favoriteFingerprints.count {
+            favoriteFingerprints = pruned
+            favoritesChanged = true
+        }
+
+        if favoritesChanged {
+            UserDefaults.standard.set(Array(favoriteFingerprints), forKey: Self.favoritesKey)
+        }
+        if itemsChanged {
+            saveSoon()
+        }
     }
 
     private func classify(text: String) -> ClipboardKind {
@@ -449,17 +529,24 @@ final class ClipboardMonitor: ObservableObject {
         guard text.contains("\n") else { return false }
 
         let codeSignals = [
-            "import ", "func ", "class ", "struct ", "enum ",
+            "import ", "func ", "def ", "class ", "struct ", "enum ",
             "let ", "var ", "const ", "return ", "public ",
             "{", "}", "=>", "SELECT ", "FROM "
         ]
 
+        // 单个信号太容易误伤普通文本（如英文邮件里的 "From "），要求至少命中两个
         let uppercased = text.uppercased()
-        return codeSignals.contains { signal in
-            signal == signal.uppercased()
+        var hits = 0
+        for signal in codeSignals {
+            let matched = signal == signal.uppercased()
                 ? uppercased.contains(signal)
                 : text.contains(signal)
+            if matched {
+                hits += 1
+                if hits >= 2 { return true }
+            }
         }
+        return false
     }
 
     private func linkTitle(for url: URL?) -> String? {

@@ -478,6 +478,11 @@ struct ClipboardCardView: View {
             red = Double((value >> 8) & 0xF) / 15
             green = Double((value >> 4) & 0xF) / 15
             blue = Double(value & 0xF) / 15
+        } else if raw.count == 8 {
+            // #RRGGBBAA：透明度在卡片色块上不展示，只取 RGB
+            red = Double((value >> 24) & 0xFF) / 255
+            green = Double((value >> 16) & 0xFF) / 255
+            blue = Double((value >> 8) & 0xFF) / 255
         } else {
             red = Double((value >> 16) & 0xFF) / 255
             green = Double((value >> 8) & 0xFF) / 255
