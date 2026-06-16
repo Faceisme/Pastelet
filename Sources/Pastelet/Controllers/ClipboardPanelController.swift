@@ -77,7 +77,11 @@ final class ClipboardPanelController {
             continuingCurrentAnimation: shouldContinueFromCurrentAnimation
         )
         panel.alphaValue = 1
-        NSApp.activate(ignoringOtherApps: true)
+        // 故意不调用 NSApp.activate(ignoringOtherApps:)。Pastelet 是 LSUIElement 后台 App，
+        // makeKeyAndOrderFront 仍会让它「短暂」激活（这无法完全避免），但只要不主动强激活，
+        // 撤下面板（orderOut）时前台 App 就能把 key/第一响应者收回去，⌘V/⌘A/⌘C 不再失效。
+        // 反例：旧代码调用 NSApp.activate(ignoringOtherApps:true) 强行夺取前台后无法干净归还，
+        // 表现为「另存为」面板里快捷键全部哔声，只有退出 Pastelet 才恢复。
         panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
         panel.contentView?.displayIfNeeded()
@@ -129,10 +133,13 @@ final class ClipboardPanelController {
             return
         }
 
+        // 撤下面板让它放弃 key，key 便回到目标 App 原来的关键窗口（含「另存为」面板的
+        // 文件名框），再把目标 App 激活回前台，确保 ⌘V 落到文件名框而不是 Pastelet。
+        panel?.orderOut(nil)
         target.activate()
 
-        // 等面板关闭、目标 App 拿到焦点后再模拟 ⌘V
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+        // 给 key 回到目标窗口、文件名框重新成为第一响应者留一点时间，再发 ⌘V。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
             Self.postCommandV()
         }
     }
@@ -172,9 +179,12 @@ final class ClipboardPanelController {
             }
         )
 
+        // .nonactivatingPanel：面板可成为 key、接收键盘事件（搜索输入、方向键、快速粘贴），
+        // 同时尽量降低对前台 App 的活跃状态干扰；配合 PasteletPanel 里 canBecomeMain=false，
+        // 面板不会成为系统 main 窗口去抢菜单命令路由。撤下面板后 key 自然回到前台 App 的关键窗口。
         let panel = PasteletPanel(
             contentRect: frameForPanel(),
-            styleMask: [.borderless, .fullSizeContentView],
+            styleMask: [.borderless, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -486,6 +496,10 @@ final class ClipboardPanelController {
 }
 
 final class PasteletPanel: NSPanel {
+    // 只成为 key（接收搜索/方向键），但绝不成为 main：
+    // 窗口一旦成为 main，AppKit 会顺带「激活 Pastelet 自身」，把前台 App（尤其是
+    // 跨进程托管的「另存为」面板）的活跃状态与第一响应者抢走，关闭后又收不回 ——
+    // 表现为另存为窗口里 ⌘A/⌘C/⌘V 全部哔声失效。canBecomeMain=false 是关键。
     override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
+    override var canBecomeMain: Bool { false }
 }
