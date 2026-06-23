@@ -16,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsCancellables: Set<AnyCancellable> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        installEditMenu()
+
         hotKeyManager = HotKeyManager {
             self.panelController.toggle()
         }
@@ -106,6 +108,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func menuItem(_ title: String, action: Selector, key: String) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
         item.target = self
+        return item
+    }
+
+    /// 安装一张仅含标准「编辑」菜单的应用主菜单。
+    ///
+    /// Pastelet 是 accessory（LSUIElement）后台 App，从不设置 NSApp.mainMenu，
+    /// 因此系统里没有「编辑」菜单。而文本框里的 ⌘A/⌘X/⌘C/⌘V/⌘Z 并不是 field editor
+    /// 在 keyDown 里自己处理的，它们是「编辑」菜单项的快捷键，经 performKeyEquivalent:
+    /// 沿响应链派发成 selectAll:/cut:/copy:/paste:/undo: 等动作。没有这张菜单，
+    /// 弹窗搜索框里这些快捷键就全部失效（只哔一声）。
+    /// 菜单的快捷键即便菜单栏不显示也照样生效，所以这里只为「让快捷键能路由」而装。
+    private func installEditMenu() {
+        let editMenu = NSMenu(title: "编辑")
+        editMenu.addItem(editActionItem("撤销", "undo:", "z"))
+        editMenu.addItem(editActionItem("重做", "redo:", "z", modifiers: [.command, .shift]))
+        editMenu.addItem(.separator())
+        editMenu.addItem(editActionItem("剪切", "cut:", "x"))
+        editMenu.addItem(editActionItem("拷贝", "copy:", "c"))
+        editMenu.addItem(editActionItem("粘贴", "paste:", "v"))
+        editMenu.addItem(editActionItem("全选", "selectAll:", "a"))
+
+        let editItem = NSMenuItem()
+        editItem.submenu = editMenu
+
+        let mainMenu = NSMenu()
+        mainMenu.addItem(editItem)
+        NSApp.mainMenu = mainMenu
+    }
+
+    /// 构造一个 target=nil 的菜单项：nil 让动作沿响应链派发给当前第一响应者（field editor）。
+    private func editActionItem(
+        _ title: String,
+        _ selector: String,
+        _ key: String,
+        modifiers: NSEvent.ModifierFlags = .command
+    ) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: Selector((selector)), keyEquivalent: key)
+        item.keyEquivalentModifierMask = modifiers
         return item
     }
 
