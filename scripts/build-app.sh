@@ -4,6 +4,17 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
+# ============ Dropbox 忽略护栏 ============
+# 本脚本的缓存已重定向到 $BUILD_ROOT(Dropbox 外),正常不会在仓库里生成 .build。
+# 但裸 `swift build`(不带 --scratch-path)默认仍写仓库根的 .build,而仓库在 Dropbox 里,
+# Dropbox 会把这个频繁增删的缓存的每个中间版本都留在云端(本地几百 MB → 云端十几 GB)。
+# .gitignore 拦不住 Dropbox。这里预建 .build / build 并打 `com.dropbox.ignored` 标记
+# (标记是 inode 级,删了重建会丢,故每次打包都重新打);配合仓库根的 .dropboxignore。
+for _ignore_dir in .build build; do
+    mkdir -p "$ROOT_DIR/$_ignore_dir"
+    xattr -w com.dropbox.ignored 1 "$ROOT_DIR/$_ignore_dir" 2>/dev/null || true
+done
+
 export MACOSX_DEPLOYMENT_TARGET=26.0
 
 # 构建缓存(.build 及其中的 CompilationCache.noindex 等)放到 Dropbox 外面。
@@ -21,7 +32,28 @@ mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 
 cp "$BIN_DIR/Pastelet" "$APP_DIR/Contents/MacOS/Pastelet"
 cp "$ROOT_DIR/Resources/Info.plist" "$APP_DIR/Contents/Info.plist"
-cp "$ROOT_DIR/Resources/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
+
+# Liquid Glass 图标:把 Resources/Pastelet.icon(Icon Composer 文档)用 actool 编成
+# Assets.car(+ 兜底 Pastelet.icns)放进 bundle 的 Resources。Info.plist 里 CFBundleIconName=Pastelet
+# 让系统在 macOS 26 上据此渲染自适应玻璃图标。
+RES_DIR="$APP_DIR/Contents/Resources"
+if [ -d "$ROOT_DIR/Resources/Pastelet.icon" ]; then
+  # actool 怪癖:不给 --output-partial-info-plist 就空跑不产出。这个 plist 用完即删,不进 bundle。
+  if ! xcrun actool "$ROOT_DIR/Resources/Pastelet.icon" \
+      --compile "$RES_DIR" \
+      --app-icon "Pastelet" \
+      --output-partial-info-plist "$RES_DIR/.icon-partial.plist" \
+      --platform macosx \
+      --minimum-deployment-target 26.0 \
+      --errors --warnings >"$BUILD_ROOT/actool.log" 2>&1; then
+    echo "错误:actool 编译 Pastelet.icon 失败:" >&2
+    cat "$BUILD_ROOT/actool.log" >&2
+    exit 1
+  fi
+  rm -f "$RES_DIR/.icon-partial.plist"
+elif [ -f "$ROOT_DIR/Resources/AppIcon.icns" ]; then
+  cp "$ROOT_DIR/Resources/AppIcon.icns" "$RES_DIR/AppIcon.icns"
+fi
 chmod +x "$APP_DIR/Contents/MacOS/Pastelet"
 
 # 用「固定身份」签名：辅助功能(TCC)授权绑定的是签名身份而非二进制 hash，
