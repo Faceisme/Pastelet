@@ -6,8 +6,14 @@ cd "$ROOT_DIR"
 
 export MACOSX_DEPLOYMENT_TARGET=26.0
 
-swift build -c release --arch arm64
-BIN_DIR="$(swift build -c release --arch arm64 --show-bin-path)"
+# 构建缓存(.build 及其中的 CompilationCache.noindex 等)放到 Dropbox 外面。
+# 否则 Dropbox 会同步这些频繁增删的临时缓存,把每个中途产物的历史版本都留在云端,
+# 单个 CompilationCache.noindex 就能在云端堆到 13G(本地却只有几十 KB)。
+BUILD_ROOT="${BUILD_ROOT:-$HOME/dev/build/Pastelet}"
+mkdir -p "$BUILD_ROOT"
+
+swift build -c release --arch arm64 --scratch-path "$BUILD_ROOT"
+BIN_DIR="$(swift build -c release --arch arm64 --scratch-path "$BUILD_ROOT" --show-bin-path)"
 
 APP_DIR="$ROOT_DIR/build/Pastelet.app"
 rm -rf "$APP_DIR"
