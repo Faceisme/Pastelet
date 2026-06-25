@@ -140,8 +140,8 @@ struct SearchToolbarClusterView: View {
                 .overlay {
                     Capsule(style: .continuous)
                         .strokeBorder(
-                            Color(nsColor: .controlAccentColor).opacity(isSearching ? 0.55 : 0),
-                            lineWidth: 1.2
+                            Color(nsColor: .controlAccentColor).opacity(isSearching ? 1 : 0),
+                            lineWidth: isSearching ? 3 : 0
                         )
                 }
         }
