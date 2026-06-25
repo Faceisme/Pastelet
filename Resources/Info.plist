@@ -13,7 +13,9 @@
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
+    <string>Pastelet</string>
+    <key>CFBundleIconName</key>
+    <string>Pastelet</string>
     <key>CFBundleName</key>
     <string>Pastelet</string>
     <key>CFBundlePackageType</key>
