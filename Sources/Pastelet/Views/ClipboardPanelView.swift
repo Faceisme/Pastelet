@@ -320,12 +320,15 @@ struct ClipboardPanelView: View {
 
     private func typeIntoSearch(_ text: String) {
         guard !text.isEmpty else { return }
+        showFilterMenu = false
         if !isSearching {
             isSearching = true
         }
-        showFilterMenu = false
+        // 字符始终立即、按序写入：搜索框展开动画期间 TextField 还没成为第一响应者，
+        // 输入全程走事件监视器 → 这里追加，天然有序，不会丢字也不会乱序。
+        // 关键是「不在这里抢焦点」：首字符激活时若立刻聚焦，field editor 会以空串初始化、
+        // 在下一次原生按键时覆盖掉 searchText 首字符。焦点改由视图层在 searchText 传播完成后再落。
         searchText += text
-        searchFocusRequest += 1
     }
 
     private func resetPanelState() {

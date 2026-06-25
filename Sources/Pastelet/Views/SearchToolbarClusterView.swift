@@ -24,7 +24,7 @@ struct SearchToolbarClusterView: View {
     let onFavoritesSelected: () -> Void
     let onSearchCancelled: () -> Void
 
-    @FocusState private var isFieldFocused: Bool
+    @State private var isFieldFocused: Bool = false
     @State private var didWarmFieldEditor = false
 
     private enum Metric {
@@ -74,8 +74,8 @@ struct SearchToolbarClusterView: View {
         .frame(height: 44)
         .animation(expandAnimation, value: isSearching)
         .onChange(of: isSearching) { _, expanded in
-            // 文本框常驻视图树、field editor 也已离屏预热，这里直接聚焦即可，
-            // 无需延迟，首次展开也不再为创建子树/编辑器掉帧。
+            // SearchField 在 becomeFirstResponder 时会主动吸收当前 searchText，
+            // 因此这里直接聚焦即可，无需延迟、也不会丢字。
             isFieldFocused = expanded
         }
         .onChange(of: focusRequest) { _, _ in
@@ -111,13 +111,18 @@ struct SearchToolbarClusterView: View {
 
             // 文本框常驻：收起时压成 0 宽 + 透明，展开时铺满。避免首次插入子树的开销，
             // 它的出现也成为同一条宽度动画的一部分，更连贯。
-            TextField("搜索", text: $searchText)
-                .textFieldStyle(.plain)
-                .font(.system(size: 12.5, weight: .medium))
-                .focused($isFieldFocused)
-                .padding(.leading, 7)
-                .frame(maxWidth: isSearching ? .infinity : 0, alignment: .leading)
-                .opacity(isSearching ? 1 : 0)
+            // 用原生 SearchField（NSTextField）而非 SwiftUI TextField：后者聚焦时不吸收绑定值，
+            // 会把「打字直接搜索」累计的前几个字符覆盖掉（见 SearchField 注释）。
+            SearchField(
+                text: $searchText,
+                isFocused: $isFieldFocused,
+                onSubmit: {
+                    NotificationCenter.default.post(name: .pasteletNavSelect, object: nil)
+                }
+            )
+            .padding(.leading, 7)
+            .frame(maxWidth: isSearching ? .infinity : 0, alignment: .leading)
+            .opacity(isSearching ? 1 : 0)
 
             if isSearching {
                 searchAccessories
@@ -217,6 +222,108 @@ struct SearchToolbarClusterView: View {
         .help(help)
     }
 
+}
+
+// MARK: - 原生搜索输入框
+
+/// 原生 NSTextField 包装，解决「打字直接搜索」首字符被覆盖的问题。
+///
+/// SwiftUI 的 `TextField` 在成为第一响应者那一刻**不会**把当前绑定值灌进 field editor：
+/// 于是事件监视器在展开动画期间按序写入 `searchText` 的前几个字符（如 "ic"），会被 field editor
+/// 接管输入时的空内容覆盖（实测第一下原生按键把 "ic" 清成 "o"，"icon" 变 "on"）。
+/// 这里在 `becomeFirstResponder` 时主动把绑定值写入字段并把光标移到末尾，彻底消除这次交接丢字。
+private struct SearchField: NSViewRepresentable {
+    @Binding var text: String
+    @Binding var isFocused: Bool
+    var onSubmit: () -> Void = {}
+
+    func makeNSView(context: Context) -> FocusAdoptingTextField {
+        let tf = FocusAdoptingTextField()
+        tf.delegate = context.coordinator
+        tf.isBordered = false
+        tf.drawsBackground = false
+        tf.focusRingType = .none
+        tf.font = .systemFont(ofSize: 12.5, weight: .medium)
+        tf.placeholderString = "搜索"
+        tf.lineBreakMode = .byTruncatingTail
+        tf.usesSingleLineMode = true
+        tf.cell?.wraps = false
+        tf.cell?.isScrollable = true
+        tf.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        tf.boundTextProvider = { [weak coordinator = context.coordinator] in
+            coordinator?.parent.text ?? ""
+        }
+        tf.onFocusChange = { [weak coordinator = context.coordinator] focused in
+            DispatchQueue.main.async {
+                guard let coordinator else { return }
+                if coordinator.parent.isFocused != focused {
+                    coordinator.parent.isFocused = focused
+                }
+            }
+        }
+        return tf
+    }
+
+    func updateNSView(_ tf: FocusAdoptingTextField, context: Context) {
+        context.coordinator.parent = self
+        // 非编辑态时让显示值跟随绑定（清空、外部赋值等）
+        if tf.currentEditor() == nil, tf.stringValue != text {
+            tf.stringValue = text
+        }
+        guard let window = tf.window else { return }
+        let isFirstResponder = tf.currentEditor() != nil && window.firstResponder === tf.currentEditor()
+        if isFocused, !isFirstResponder {
+            window.makeFirstResponder(tf)
+        } else if !isFocused, isFirstResponder {
+            window.makeFirstResponder(nil)
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: SearchField
+        init(_ parent: SearchField) { self.parent = parent }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let tf = obj.object as? NSTextField else { return }
+            parent.text = tf.stringValue
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            if selector == #selector(NSResponder.insertNewline(_:)) {
+                parent.onSubmit()
+                return true
+            }
+            return false
+        }
+    }
+}
+
+/// 在成为第一响应者时把外部绑定值写进字段、光标置末尾，避免 field editor 以空内容覆盖已累计的输入。
+final class FocusAdoptingTextField: NSTextField {
+    var boundTextProvider: () -> String = { "" }
+    var onFocusChange: (Bool) -> Void = { _ in }
+
+    override func becomeFirstResponder() -> Bool {
+        let ok = super.becomeFirstResponder()
+        if ok {
+            let value = boundTextProvider()
+            if stringValue != value { stringValue = value }
+            if let editor = currentEditor() {
+                let end = (value as NSString).length
+                editor.selectedRange = NSRange(location: end, length: 0)
+            }
+            onFocusChange(true)
+        }
+        return ok
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let ok = super.resignFirstResponder()
+        if ok { onFocusChange(false) }
+        return ok
+    }
 }
 
 // MARK: - 筛选磁贴（剪贴板 / 收藏）
