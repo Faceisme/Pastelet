@@ -138,10 +138,32 @@ final class ClipboardPanelController {
         panel?.orderOut(nil)
         target.activate()
 
-        // 给 key 回到目标窗口、文件名框重新成为第一响应者留一点时间，再发 ⌘V。
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+        // 何时发 ⌘V：原来固定等 0.12s。对原生 App（NSTextField 在窗口重新成为 key 时
+        // 同步恢复第一响应者）够用；但 Chrome / Electron 这类 App 的网页 <input> 焦点是
+        // 由渲染进程异步恢复的，窗口成为 key 后还要再过一拍才重新聚焦，0.12s 偏短、
+        // 合成的 ⌘V 会落空 —— 表现为「只有 Chrome 粘不进去」。
+        // 改成：先轮询确认目标 App 真的回到前台（吸收激活耗时，不被白等），再留一段结算
+        // 时间补足网页类 App 的异步焦点恢复，最后才发 ⌘V。
+        let targetPID = target.processIdentifier
+        Task { @MainActor in
+            await Self.waitUntilFrontmost(pid: targetPID, timeout: 0.6, settle: 0.2)
             Self.postCommandV()
         }
+    }
+
+    /// 轮询直到 pid 对应的 App 成为前台（或超过 `timeout`），随后再等 `settle`，
+    /// 给 Chrome/Electron 这类靠渲染进程异步恢复网页 <input> 焦点的 App 留出补焦点时间。
+    private static func waitUntilFrontmost(
+        pid: pid_t,
+        timeout: TimeInterval,
+        settle: TimeInterval
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while NSWorkspace.shared.frontmostApplication?.processIdentifier != pid,
+              Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000) // 20ms
+        }
+        try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000))
     }
 
     private static func postCommandV() {
