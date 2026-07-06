@@ -424,7 +424,11 @@ struct ClipboardCardView: View {
             return AttributedString(string)
         }
         guard let match = string.range(of: searchQuery, options: .caseInsensitive) else {
-            // 本字段未命中（可能命中在别的字段），原样返回不开窗。
+            // 本字段未命中（命中可能在标题等其他字段）：同样只取一屏前缀，
+            // 避免为超长正文整段构建 AttributedString（否则恰好绕开上面无搜索时的优化）
+            if let end = string.index(string.startIndex, offsetBy: 600, limitedBy: string.endIndex) {
+                return AttributedString(String(string[..<end]) + "…")
+            }
             return AttributedString(string)
         }
 

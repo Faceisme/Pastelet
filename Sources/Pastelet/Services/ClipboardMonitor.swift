@@ -16,6 +16,10 @@ final class ClipboardMonitor: ObservableObject {
     /// 富文本（RTF）单项上限：超过则降级为纯文本，避免 base64 膨胀 JSON 与内存
     private let maxRTFBytes = 1 * 1024 * 1024
 
+    /// 纯文本单项上限：超过则不记录历史。意外复制的超大日志会拖垮主线程分类/指纹，
+    /// 且每次防抖落盘都全量重写 JSON 索引，写放大不可控；内容仍在系统剪贴板上可直接 ⌘V。
+    private let maxTextBytes = 2 * 1024 * 1024
+
     private static let favoritesKey = "pastelet.favorites"
     private var favoriteFingerprints: Set<String> =
         Set(UserDefaults.standard.stringArray(forKey: "pastelet.favorites") ?? [])
@@ -26,6 +30,14 @@ final class ClipboardMonitor: ObservableObject {
     /// 新复制图片的原始字节（fingerprint → data），暂存到落盘；落盘后清空，
     /// 避免全分辨率原图字节常驻内存（内存/卡片只留缩略图）。
     private var pendingImageData: [String: Data] = [:]
+
+    /// 图片后台处理期间暂存的来源 App 图标（jobID → icon）：
+    /// NSImage 非 Sendable 不能进后台闭包，留在主线程等结果回来再取
+    private var pendingImageSourceIcons: [UUID: NSImage] = [:]
+
+    /// 抓取中的链接预览 provider：LPMetadataProvider 若无强引用会被提前释放、
+    /// 回调静默不触发（表现为链接预览偶发不出来），持有到回调完成再移除
+    private var linkPreviewProviders: [UUID: LPMetadataProvider] = [:]
 
     func start() {
         items = store.load()
@@ -206,7 +218,13 @@ final class ClipboardMonitor: ObservableObject {
     }
 
     private func captureCurrentPasteboard() {
-        guard var item = makeItem(from: NSPasteboard.general) else { return }
+        guard let item = makeItem(from: NSPasteboard.general) else { return }
+        insertCaptured(item)
+    }
+
+    /// 去重并插入一条新捕获的记录（同步捕获与图片后台处理完成后共用入口）
+    private func insertCaptured(_ item: ClipboardItem) {
+        var item = item
         guard items.first?.fingerprint != item.fingerprint else { return }
 
         // 历史里已有相同内容（如从源 App 重新复制）：把旧条目搬到首位，
@@ -223,9 +241,12 @@ final class ClipboardMonitor: ObservableObject {
         items.insert(item, at: 0)
         fetchLinkPreviewIfNeeded(for: item)
 
-        // 超出上限时，优先移除最旧的“非收藏”项，保留收藏
+        // 超出上限时，优先移除最旧的“非收藏”项，保留收藏。
+        // index > 0 是关键：收藏占满名额时，唯一的非收藏项就是刚插入的新条目（下标 0），
+        // 不能把它自己挤掉；此时允许总数暂超上限（= 收藏数 + 1）。
         while items.count > maxItems,
-              let index = items.lastIndex(where: { !$0.isFavorite }) {
+              let index = items.lastIndex(where: { !$0.isFavorite }),
+              index > 0 {
             items.remove(at: index)
         }
 
@@ -267,9 +288,19 @@ final class ClipboardMonitor: ObservableObject {
             let rawData = pasteboard.data(forType: .png)
                 ?? pasteboard.data(forType: .tiff)
                 ?? image.tiffRepresentation
+            if let rawData {
+                // 大图的 SHA256 哈希 + 缩略图解码是重活，丢到后台算完再回主线程插入，
+                // 面板开着时复制 4K 截图不再卡 UI
+                captureImageInBackground(
+                    rawData: rawData,
+                    sourceName: sourceName,
+                    sourceBundleIdentifier: sourceBundleIdentifier,
+                    sourceIcon: sourceIcon
+                )
+                return nil
+            }
             return makeImageItem(
                 image: image,
-                rawData: rawData,
                 sourceName: sourceName,
                 sourceBundleIdentifier: sourceBundleIdentifier,
                 sourceIcon: sourceIcon
@@ -286,6 +317,10 @@ final class ClipboardMonitor: ObservableObject {
         }
 
         if let text = pasteboard.string(forType: .string) {
+            guard text.utf8.count <= maxTextBytes else {
+                NSLog("Pastelet: 文本约 \(text.utf8.count / 1024 / 1024)MB 超过上限，不记录历史")
+                return nil
+            }
             return makeTextItem(
                 text: text,
                 richRTFData: pasteboard.data(forType: .rtf),
@@ -298,24 +333,96 @@ final class ClipboardMonitor: ObservableObject {
         return nil
     }
 
+    /// 图片捕获的重活（内容哈希 + 缩略图解码/转码）放后台线程：闭包里只有
+    /// Sendable 的 Data/String，算完回主线程再构建 NSImage 与条目。
+    /// 来源图标（NSImage，非 Sendable）不进后台闭包，用 jobID 暂存在主线程。
+    private func captureImageInBackground(
+        rawData: Data,
+        sourceName: String,
+        sourceBundleIdentifier: String?,
+        sourceIcon: NSImage?
+    ) {
+        let jobID = UUID()
+        if let sourceIcon {
+            pendingImageSourceIcons[jobID] = sourceIcon
+        }
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let fingerprint = "image:\(rawData.pasteletContentHash)"
+            let decoded = NSImage.pasteletThumbnailPNGAndPixelSize(data: rawData)
+            await self?.finishImageCapture(
+                jobID: jobID,
+                fingerprint: fingerprint,
+                decoded: decoded,
+                rawData: rawData,
+                sourceName: sourceName,
+                sourceBundleIdentifier: sourceBundleIdentifier
+            )
+        }
+    }
+
+    /// 回到主线程：由后台算好的哈希/缩略图字节组装条目并插入。
+    /// 原始字节暂存 pendingImageData，落盘时直接写、免主线程重新编码；
+    /// 原图完整留盘，粘贴时按需读回，保真度不变。
+    private func finishImageCapture(
+        jobID: UUID,
+        fingerprint: String,
+        decoded: (thumbnailPNG: Data, pixelWidth: Int, pixelHeight: Int)?,
+        rawData: Data,
+        sourceName: String,
+        sourceBundleIdentifier: String?
+    ) {
+        let sourceIcon = pendingImageSourceIcons.removeValue(forKey: jobID)
+
+        // 能进剪贴板但 ImageIO 解不开的字节（极少见）：退回 NSImage 同步兜底路径
+        guard let decoded, let thumbnail = NSImage(data: decoded.thumbnailPNG) else {
+            if let image = NSImage(data: rawData) {
+                insertCaptured(makeImageItem(
+                    image: image,
+                    sourceName: sourceName,
+                    sourceBundleIdentifier: sourceBundleIdentifier,
+                    sourceIcon: sourceIcon
+                ))
+            }
+            return
+        }
+
+        pendingImageData[fingerprint] = rawData
+
+        insertCaptured(ClipboardItem(
+            kind: .image,
+            title: "图片",
+            subtitle: "刚刚",
+            detail: "\(decoded.pixelWidth) × \(decoded.pixelHeight)",
+            rawText: nil,
+            image: thumbnail,
+            fileURLs: [],
+            colorHex: nil,
+            linkURL: nil,
+            previewTitle: nil,
+            previewSubtitle: nil,
+            previewImage: thumbnail,
+            sourceAppName: sourceName,
+            sourceBundleIdentifier: sourceBundleIdentifier,
+            sourceIcon: sourceIcon,
+            createdAt: Date(),
+            fingerprint: fingerprint
+        ))
+    }
+
+    /// 兜底路径：拿不到剪贴板原始字节或字节不可解码（都极少见）时的同步捕获。
+    /// 指纹无法基于内容——用一次性随机后缀：宁可偶尔重复记录，
+    /// 也不能像旧版用「宽x高」把不同图误判成同一张（会静默丢图、错连已存的原图文件）。
     private func makeImageItem(
         image: NSImage,
-        rawData: Data?,
         sourceName: String,
         sourceBundleIdentifier: String?,
         sourceIcon: NSImage?
     ) -> ClipboardItem {
         let width = Int(image.size.width)
         let height = Int(image.size.height)
-        let hash = rawData?.pasteletContentHash ?? "\(width)x\(height)"
-        let fingerprint = "image:\(hash)"
-
-        // 内存/卡片只留缩略图（卡片仅 ~232pt）；原始字节暂存，落盘时直接写盘、
-        // 免掉主线程把整张大图重新编码成 PNG。原图完整留盘，粘贴时按需读回，保真度不变。
+        let fingerprint = "image:\(width)x\(height):\(UUID().uuidString)"
         let thumbnail = image.pasteletThumbnail()
-        if let rawData {
-            pendingImageData[fingerprint] = rawData
-        }
 
         return ClipboardItem(
             kind: .image,
@@ -352,11 +459,12 @@ final class ClipboardMonitor: ObservableObject {
         if urls.count == 1,
            let imageURL = urls.first,
            isImageFile(imageURL),
-           let preview = NSImage(contentsOf: imageURL) {
-            let width = Int(preview.size.width)
-            let height = Int(preview.size.height)
-            // 卡片只显示缩略图；粘贴时走原始文件 URL，保真度不受影响
-            let thumbnail = preview.pasteletThumbnail()
+           // 卡片只显示缩略图；粘贴时走原始文件 URL，保真度不受影响。
+           // 子采样解码 + 头信息读尺寸：不像旧版 NSImage(contentsOf:) 把整张原图解码进内存
+           let thumbnail = NSImage.pasteletThumbnail(contentsOf: imageURL) {
+            let pixelSize = NSImage.pasteletPixelSize(contentsOf: imageURL)
+            let width = pixelSize?.width ?? Int(thumbnail.size.width)
+            let height = pixelSize?.height ?? Int(thumbnail.size.height)
 
             return ClipboardItem(
                 kind: .image,
@@ -528,6 +636,9 @@ final class ClipboardMonitor: ObservableObject {
     private func isLikelyCode(_ text: String) -> Bool {
         guard text.contains("\n") else { return false }
 
+        // 只扫前 8KB：代码特征通常开头就会出现，避免对超大文本整段 uppercased + 多轮 contains
+        let sample = String(text.prefix(8192))
+
         let codeSignals = [
             "import ", "func ", "def ", "class ", "struct ", "enum ",
             "let ", "var ", "const ", "return ", "public ",
@@ -535,12 +646,12 @@ final class ClipboardMonitor: ObservableObject {
         ]
 
         // 单个信号太容易误伤普通文本（如英文邮件里的 "From "），要求至少命中两个
-        let uppercased = text.uppercased()
+        let uppercased = sample.uppercased()
         var hits = 0
         for signal in codeSignals {
             let matched = signal == signal.uppercased()
                 ? uppercased.contains(signal)
-                : text.contains(signal)
+                : sample.contains(signal)
             if matched {
                 hits += 1
                 if hits >= 2 { return true }
@@ -569,7 +680,14 @@ final class ClipboardMonitor: ObservableObject {
 
         let id = item.id
         let provider = LPMetadataProvider()
+        // 持有 provider 到回调完成：局部变量若无强引用会被提前释放，抓取被静默取消
+        linkPreviewProviders[id] = provider
         provider.startFetchingMetadata(for: url) { [weak self] metadata, _ in
+            Task { @MainActor [weak self] in
+                // 显式丢弃返回值：单表达式闭包会把 removeValue 的返回值（非 Sendable 的
+                // LPMetadataProvider?）推断成 Task 的 Success 类型，Swift 6 下编译不过
+                _ = self?.linkPreviewProviders.removeValue(forKey: id)
+            }
             guard let self, let metadata else { return }
 
             let title = metadata.title

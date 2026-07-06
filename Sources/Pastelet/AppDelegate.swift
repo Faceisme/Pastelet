@@ -18,8 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         installEditMenu()
 
-        hotKeyManager = HotKeyManager {
-            self.panelController.toggle()
+        hotKeyManager = HotKeyManager { [weak self] in
+            self?.panelController.toggle()
         }
         configureHotKey(showAlertOnFailure: true)
 

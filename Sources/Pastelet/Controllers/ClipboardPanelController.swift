@@ -146,24 +146,30 @@ final class ClipboardPanelController {
         // 时间补足网页类 App 的异步焦点恢复，最后才发 ⌘V。
         let targetPID = target.processIdentifier
         Task { @MainActor in
-            await Self.waitUntilFrontmost(pid: targetPID, timeout: 0.6, settle: 0.2)
+            guard await Self.waitUntilFrontmost(pid: targetPID, timeout: 0.6, settle: 0.2) else {
+                // 超时仍没回到前台：不发 ⌘V，避免粘进碰巧在前台的其他 App；
+                // 内容已在剪贴板，用户可手动 ⌘V
+                return
+            }
             Self.postCommandV()
         }
     }
 
-    /// 轮询直到 pid 对应的 App 成为前台（或超过 `timeout`），随后再等 `settle`，
-    /// 给 Chrome/Electron 这类靠渲染进程异步恢复网页 <input> 焦点的 App 留出补焦点时间。
+    /// 轮询直到 pid 对应的 App 成为前台，随后再等 `settle`，给 Chrome/Electron 这类
+    /// 靠渲染进程异步恢复网页 <input> 焦点的 App 留出补焦点时间。
+    /// 超过 `timeout` 仍未回到前台则返回 false，调用方不应再合成 ⌘V。
     private static func waitUntilFrontmost(
         pid: pid_t,
         timeout: TimeInterval,
         settle: TimeInterval
-    ) async {
+    ) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
-        while NSWorkspace.shared.frontmostApplication?.processIdentifier != pid,
-              Date() < deadline {
+        while NSWorkspace.shared.frontmostApplication?.processIdentifier != pid {
+            guard Date() < deadline else { return false }
             try? await Task.sleep(nanoseconds: 20_000_000) // 20ms
         }
         try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000))
+        return true
     }
 
     private static func postCommandV() {

@@ -86,13 +86,15 @@ final class HistoryStore {
             writtenImageFilenames.formIntersection(referenced)
         }
 
-        // 只捕获 Sendable 值类型（URL/数组/Set/Bool）的不可变副本，不捕获 self，避免数据竞争
+        // 后台闭包只用 Sendable 值类型（URL/数组/Set/Bool）的不可变快照干活；
+        // self（@MainActor 类，引用本身 Sendable）仅在写盘失败后回主线程回滚缓存，
+        // 后台队列不触碰它的任何状态
         let imagesDirectory = self.imagesDirectory
         let indexURL = self.indexURL
         let newImagesSnapshot = newImages
         let referencedSnapshot = referenced
-        ioQueue.async {
-            Self.writeToDisk(
+        ioQueue.async { [weak self] in
+            let failedImages = Self.writeToDisk(
                 stored: stored,
                 newImages: newImagesSnapshot,
                 referenced: referencedSnapshot,
@@ -100,6 +102,12 @@ final class HistoryStore {
                 imagesDirectory: imagesDirectory,
                 indexURL: indexURL
             )
+            guard !failedImages.isEmpty else { return }
+            Task { @MainActor in
+                // 回滚失败图片的“已写”标记：同指纹下次保存可重试，
+                // 而不是永远以为原图在盘上、粘贴时只剩缩略图
+                self?.writtenImageFilenames.subtract(failedImages)
+            }
         }
     }
 
@@ -108,7 +116,8 @@ final class HistoryStore {
         ioQueue.sync {}
     }
 
-    /// 后台串行队列执行：不触碰任何主线程状态，只用传入的不可变快照
+    /// 后台串行队列执行：不触碰任何主线程状态，只用传入的不可变快照。
+    /// 返回写入失败的图片文件名，供调用方回滚“已写”缓存。
     nonisolated private static func writeToDisk(
         stored: [StoredItem],
         newImages: [(filename: String, data: Data)],
@@ -116,8 +125,9 @@ final class HistoryStore {
         cleanOrphans: Bool,
         imagesDirectory: URL,
         indexURL: URL
-    ) {
+    ) -> [String] {
         let fileManager = FileManager.default
+        var failedImageFilenames: [String] = []
 
         // 写新图片（非 PNG 字节先转码，TIFF 普遍无压缩、体积可达 PNG 的数倍）
         for image in newImages {
@@ -125,6 +135,7 @@ final class HistoryStore {
             do {
                 try pngEncodedIfNeeded(image.data).write(to: url, options: .atomic)
             } catch {
+                failedImageFilenames.append(image.filename)
                 NSLog("Pastelet: 写入图片失败 \(url.lastPathComponent): \(error.localizedDescription)")
             }
         }
@@ -138,12 +149,14 @@ final class HistoryStore {
         }
 
         // 孤儿图片清理（降频执行）
-        guard cleanOrphans else { return }
-        if let files = try? fileManager.contentsOfDirectory(atPath: imagesDirectory.path) {
+        if cleanOrphans,
+           let files = try? fileManager.contentsOfDirectory(atPath: imagesDirectory.path) {
             for file in files where !referenced.contains(file) {
                 try? fileManager.removeItem(at: imagesDirectory.appendingPathComponent(file))
             }
         }
+
+        return failedImageFilenames
     }
 
     /// 后台队列执行：剪贴板给的原始字节若不是 PNG（多为无压缩 TIFF）就转码成 PNG 再落盘。

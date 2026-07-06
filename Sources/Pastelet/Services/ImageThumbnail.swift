@@ -1,6 +1,7 @@
 import AppKit
 import CryptoKit
 import ImageIO
+import UniformTypeIdentifiers
 
 extension NSImage {
     /// 直接从磁盘 URL 解码出降采样缩略图（最长边 <= maxPixel）。
@@ -45,6 +46,51 @@ extension NSImage {
         )
         thumbnail.unlockFocus()
         return thumbnail
+    }
+
+    /// 后台线程用：从原始图片字节一次解出「缩略图 PNG 字节 + 原图像素尺寸」。
+    /// 全程 ImageIO（线程安全、子采样解码，不整图解码），产物都是 Sendable 的值类型，
+    /// 可安全送回主线程再构建 NSImage —— Swift 6 下 NSImage 本身不能跨 actor 传递。
+    static func pasteletThumbnailPNGAndPixelSize(
+        data: Data,
+        maxPixel: CGFloat = 512
+    ) -> (thumbnailPNG: Data, pixelWidth: Int, pixelHeight: Int)? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            output,
+            UTType.png.identifier as CFString,
+            1,
+            nil
+        ) else { return nil }
+        CGImageDestinationAddImage(destination, cg, nil)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+
+        let width = properties?[kCGImagePropertyPixelWidth] as? Int ?? cg.width
+        let height = properties?[kCGImagePropertyPixelHeight] as? Int ?? cg.height
+        return (output as Data, width, height)
+    }
+
+    /// 只读图片头信息取像素尺寸，不解码位图
+    static func pasteletPixelSize(contentsOf url: URL) -> (width: Int, height: Int)? {
+        guard
+            let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+            let width = properties[kCGImagePropertyPixelWidth] as? Int,
+            let height = properties[kCGImagePropertyPixelHeight] as? Int
+        else { return nil }
+        return (width, height)
     }
 }
 

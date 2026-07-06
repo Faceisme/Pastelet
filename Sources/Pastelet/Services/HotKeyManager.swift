@@ -14,6 +14,18 @@ final class HotKeyManager {
         installHandler()
     }
 
+    // isolated deinit：Swift 6 下 nonisolated deinit 不能访问非 Sendable 的存储属性
+    isolated deinit {
+        // 目前是 App 常驻对象，正常不会走到这里；但 Carbon handler 里存的是
+        // passUnretained 裸指针，若将来实例可被重建，不摘除 handler 就是悬空指针
+        if let hotKeyRef {
+            UnregisterEventHotKey(hotKeyRef)
+        }
+        if let eventHandler {
+            RemoveEventHandler(eventHandler)
+        }
+    }
+
     @discardableResult
     func updateShortcut(_ shortcut: PasteletKeyboardShortcut?) -> Bool {
         unregisterShortcut()
