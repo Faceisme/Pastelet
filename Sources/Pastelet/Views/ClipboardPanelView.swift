@@ -135,13 +135,16 @@ struct ClipboardPanelView: View {
         let items = filteredItems
         let selection = clampedSelection(count: items.count)
         return ZStack {
-            // macOS 26 Liquid Glass — 用 .regular（磨砂）而非 .clear（高透）：后者要大量采样/折射
-            // 背景，合成最贵；.regular 更实、合成更轻（对齐 Paste 的磨砂观感，降 WindowServer 负载）。
-            // 底色也调实一些，进一步减少需要实时合成的背景面积。
+            // macOS 26 Liquid Glass — 对齐 Paste 的高透观感必须用 .clear：
+            // .regular 磨砂自带厚重乳白雾感，无论底色多透都看不见壁纸纹理。
+            // .clear 合成更贵（大量采样/折射背景），但卡片已完全不透明、可被遮挡剔除，
+            // 玻璃实时合成的只剩卡片间隙与顶部工具栏带，负载可接受。
+            // 底色垫 0.6（逐轮试出来的：0.18 透过头、0.45 仍偏透、0.76 闷成实心板），
+            // 既透出壁纸颜色，又给内容留一层足够的垫底对比度。
             GlassEffectView(
                 cornerRadius: panelCornerRadius,
-                tintColor: NSColor.windowBackgroundColor.withAlphaComponent(0.76),
-                style: .regular
+                tintColor: NSColor.windowBackgroundColor.withAlphaComponent(0.6),
+                style: .clear
             )
             .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
             .overlay {
