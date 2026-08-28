@@ -20,6 +20,9 @@ final class HistoryStore {
     /// 已落地的图片文件名缓存（仅主线程访问），避免每次保存在主线程 stat 磁盘判断是否已写
     private var writtenImageFilenames: Set<String> = []
 
+    /// bundleId → 来源 App 图标（nil 表示查过但没有），仅主线程访问
+    private var iconCache: [String: NSImage?] = [:]
+
     /// 保存计数，用于把孤儿图片清理降频（不必每次保存都扫描整个目录）
     private var saveCounter = 0
     private static let orphanCleanupInterval = 12
@@ -238,12 +241,18 @@ final class HistoryStore {
         )
     }
 
+    /// 来源 App 图标按 bundleId 记忆化：历史动辄上千条但来源就那么几个 App，
+    /// 不缓存就会在启动加载时对每条记录都做一次 LaunchServices 查询 + 取图标（几百毫秒起）。
     private func icon(forBundleIdentifier bundleId: String?) -> NSImage? {
         guard let bundleId else { return nil }
+        if let cached = iconCache[bundleId] { return cached }
+
+        var icon: NSImage?
         if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
-            return NSWorkspace.shared.icon(forFile: url.path)
+            icon = NSWorkspace.shared.icon(forFile: url.path)
         }
-        return nil
+        iconCache[bundleId] = icon // 查不到也记下来，避免每条都重查一遍已卸载的 App
+        return icon
     }
 
     private func isImageFile(_ url: URL) -> Bool {

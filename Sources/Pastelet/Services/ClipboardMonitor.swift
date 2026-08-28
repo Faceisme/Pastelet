@@ -9,7 +9,11 @@ final class ClipboardMonitor: ObservableObject {
     private var timer: Timer?
     private var pruneTimer: Timer?
     private var lastChangeCount = NSPasteboard.general.changeCount
-    private let maxItems = 36
+    /// 历史条数上限：只是防止无界增长的安全阀（尤其「保留时长」设为永久时）。
+    /// 日常裁剪交给 pruneExpired 按保留时长做——上限压太低会直接架空该设置：
+    /// 36 条对活跃使用者只够半小时，设了「保留一个月」也搜不到昨天的记录。
+    // ponytail: 索引是整份 JSON，每次落盘全量重写（2000 条约 1MB）；还要更大就得换 SQLite/分片索引
+    private let maxItems = 2000
 
     /// 收藏项数量上限：收藏豁免 maxItems 裁剪，必须单独设上限，否则内存/存储会无界增长
     private let maxFavorites = 100

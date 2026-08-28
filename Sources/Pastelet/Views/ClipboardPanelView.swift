@@ -31,41 +31,35 @@ struct ClipboardPanelView: View {
         .spring(response: 0.29, dampingFraction: 0.94, blendDuration: 0.04)
     }
 
+    /// 时间线一次最多渲染多少张卡片。历史现在能存到上千条，而时间线是即时渲染的 HStack
+    /// （在 NSScrollView 里，LazyHStack 拿不到可视区、并不会真的偷懒），全量渲染必卡。
+    /// 过滤/搜索跑在完整历史上，这里只截结果的前 N 条——搜得到、但一次只画这么多。
+    // ponytail: 上限想再抬高就得做真正的窗口化渲染（按滚动偏移只建可视区那几张卡）
+    private static let timelineRenderLimit = 120
+
     private var filteredItems: [ClipboardItem] {
-        var result = monitor.items
-
-        if showFavoritesOnly {
-            result = result.filter(\.isFavorite)
-        }
-
-        if let kindFilter {
-            result = result.filter { $0.kind == kindFilter }
-        }
-
-        if let sourceFilter {
-            result = result.filter { $0.sourceAppName == sourceFilter }
-        }
-
         let query = debouncedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !query.isEmpty {
-            // 只匹配用户能看到的内容字段；不再匹配来源 App 名和类型标签，
+
+        // lazy + prefix：命中够 N 条就停止扫描，不必为了丢掉的部分把整段历史过一遍
+        let matches = monitor.items.lazy.filter { item in
+            if showFavoritesOnly, !item.isFavorite { return false }
+            if let kindFilter, item.kind != kindFilter { return false }
+            if let sourceFilter, item.sourceAppName != sourceFilter { return false }
+            guard !query.isEmpty else { return true }
+
+            // 只匹配用户能看到的内容字段；不匹配来源 App 名和类型标签，
             // 否则像搜 "me" 会命中所有来自 "Chrome" 的项，看着像假搜索。
-            result = result.filter { item in
-                [
-                    item.rawText,
-                    item.title,
-                    item.previewTitle,
-                    item.previewSubtitle,
-                    item.detail
-                ]
-                .compactMap(\.self)
-                .contains { value in
-                    value.localizedCaseInsensitiveContains(query)
-                }
-            }
+            return [
+                item.rawText,
+                item.title,
+                item.previewTitle,
+                item.previewSubtitle,
+                item.detail
+            ]
+            .contains { $0?.localizedCaseInsensitiveContains(query) == true }
         }
 
-        return result
+        return Array(matches.prefix(Self.timelineRenderLimit))
     }
 
     /// 历史里出现过的类型（用于过滤菜单「类型」分区），按枚举固定顺序
