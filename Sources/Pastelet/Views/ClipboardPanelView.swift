@@ -22,14 +22,38 @@ struct ClipboardPanelView: View {
     @State private var deletedItems: [DeletedHistoryItem] = []
     @State private var keyboardScrollRequest = 0
     @State private var timelineResetRequest = 0
+    /// 时间线回到开头时是否走动画：过滤条件变化时要「滑」回去；
+    /// 面板隐藏期间的重置必须瞬时，否则下次弹出时会看到一段莫名其妙的横向滑动
+    /// 「换了一份结果」的代号。过滤条件一变就 +1，卡片据此整批重新浮现——
+    /// 靠差量重排（旧卡片滑到新位置）来表达搜索结果，看着就是互相推挤、没有顺序。
+    @State private var revealGeneration = 0
     /// 二次过滤：来源 App（按 sourceAppName）与类型（kind），与文本搜索、收藏叠加生效
     @State private var sourceFilter: String? = nil
     @State private var kindFilter: ClipboardKind? = nil
     @State private var showFilterMenu = false
 
+    /// 卡片重排（补位/让位）的主曲线。原来的 response 0.29 + damping 0.94 近乎临界阻尼，
+    /// 在 0.98 的微缩放下看着是「跳」而不是「移」；macOS 的内容转场更舍得给时间、
+    /// 并留一点回弹余量，眼睛才跟得上位移。
     private var timelineAnimation: Animation {
-        .spring(response: 0.29, dampingFraction: 0.94, blendDuration: 0.04)
+        .spring(duration: 0.42, bounce: 0.16)
     }
+
+    /// 卡片揭示（浮现）曲线，配合按位置递增的延迟形成从左往右的级联
+    private var cardRevealAnimation: Animation {
+        .spring(duration: 0.34, bounce: 0.10)
+    }
+
+    /// 时间线 ↔ 空状态 的整块交叉淡入
+    private var contentSwapAnimation: Animation {
+        .easeOut(duration: 0.24)
+    }
+
+    /// 揭示级联的每档延迟与档数上限：可视区一次看得见 5~6 张卡，
+    /// 30ms 一档刚好能看出「从最近往以前依次铺开」而不觉得在等；
+    /// 封顶 12 档是因为再往右已经滚出屏幕，排延迟只会让人白等
+    private static let cardStaggerStep = 0.03
+    private static let cardStaggerCap = 12
 
     /// 时间线一次最多渲染多少张卡片。历史现在能存到上千条，而时间线是即时渲染的 HStack
     /// （在 NSScrollView 里，LazyHStack 拿不到可视区、并不会真的偷懒），全量渲染必卡。
@@ -90,6 +114,12 @@ struct ClipboardPanelView: View {
         return result.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
+    /// 过滤条件指纹：搜索词 / 类型 / 来源任一变化都意味着「换了一份结果」，
+    /// 合成一个值只挂一个 onChange——分成三个会把 body 的类型检查顶爆
+    private var filterSignature: String {
+        "\(debouncedQuery)|\(kindFilter?.rawValue ?? "")|\(sourceFilter ?? "")"
+    }
+
     /// 选中下标钳制在有效范围内（按给定数量，避免重复计算 filteredItems）
     private func clampedSelection(count: Int) -> Int? {
         guard count > 0, let selectedIndex else { return nil }
@@ -102,6 +132,7 @@ struct ClipboardPanelView: View {
         let items: [TimelineItemSignature]
         let selectedIndex: Int?
         let query: String
+        let generation: Int
     }
 
     private struct TimelineItemSignature: Equatable {
@@ -128,6 +159,8 @@ struct ClipboardPanelView: View {
         // 一次 body 只算一次过滤结果与选中下标，避免在 clampedSelection/timeline/每张卡片里重复全量 filter
         let items = filteredItems
         let selection = clampedSelection(count: items.count)
+        // 0 = 没有历史，1 = 有历史但没有匹配，2 = 有结果。整块内容切换按这个值交叉淡入
+        let contentMode = monitor.items.isEmpty ? 0 : (items.isEmpty ? 1 : 2)
         return ZStack {
             // macOS 26 Liquid Glass — 对齐 Paste 的高透观感必须用 .clear：
             // .regular 磨砂自带厚重乳白雾感，无论底色多透都看不见壁纸纹理。
@@ -159,16 +192,7 @@ struct ClipboardPanelView: View {
                     .padding(.top, 10)
                     .padding(.bottom, 8)
 
-                if monitor.items.isEmpty {
-                    emptyState(title: "复制内容后会显示在这里")
-                } else if items.isEmpty {
-                    emptyState(title: showFavoritesOnly
-                               ? "还没有收藏的项目（右键卡片可收藏）"
-                               : "没有找到匹配的剪贴板项目")
-                } else {
-                    timeline(items: items, selection: selection,
-                             query: debouncedQuery.trimmingCharacters(in: .whitespacesAndNewlines))
-                }
+                content(items: items, selection: selection, mode: contentMode)
             }
         }
         .padding(.horizontal, 6)
@@ -198,6 +222,9 @@ struct ClipboardPanelView: View {
         .onReceive(NotificationCenter.default.publisher(for: .pasteletPanelResetState)) { _ in
             resetPanelState()
         }
+        // 过滤条件变了就是一份新结果：把时间线滑回开头，否则先前滚到右边的偏移会留在原处，
+        // 搜完看到的是结果列表的中段（内容变窄时还会被 clamp 瞬间拽回来）
+        .onChange(of: filterSignature) { resetTimelinePosition() }
         .task(id: searchText) {
             // 清空立即生效；输入时等 150ms 再过滤，打字过程不触发卡片重建
             if searchText.isEmpty {
@@ -401,6 +428,7 @@ struct ClipboardPanelView: View {
         selectedIndex = nil
         hoveredItemID = nil
         timelineResetRequest += 1
+        revealGeneration += 1
     }
 
     private var moreMenu: some View {
@@ -418,6 +446,33 @@ struct ClipboardPanelView: View {
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
         .help("更多")
+    }
+
+    /// 时间线 / 空状态。用 ZStack 而不是 VStack 里的 if/else：交叉淡入期间新旧两块同时在树上，
+    /// 竖排会被挤成各占一半高度（先塌一下再复位），叠放才不会动到布局。
+    @ViewBuilder
+    private func content(items: [ClipboardItem], selection: Int?, mode: Int) -> some View {
+        ZStack {
+            switch mode {
+            case 0:
+                emptyState(title: "复制内容后会显示在这里")
+                    .transition(.opacity)
+            case 1:
+                emptyState(title: showFavoritesOnly
+                           ? "还没有收藏的项目（右键卡片可收藏）"
+                           : "没有找到匹配的剪贴板项目")
+                    .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .center)))
+            default:
+                timeline(
+                    items: items,
+                    selection: selection,
+                    query: debouncedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+                .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(contentSwapAnimation, value: mode)
     }
 
     private func timeline(items: [ClipboardItem], selection: Int?, query: String) -> some View {
@@ -452,10 +507,11 @@ struct ClipboardPanelView: View {
                         }
                     )
                     .id(item.id)
-                    .transition(
-                        .asymmetric(
-                            insertion: .opacity.combined(with: .scale(scale: 0.98, anchor: .center)),
-                            removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .center))
+                    .modifier(
+                        StaggeredReveal(
+                            generation: revealGeneration,
+                            delay: Double(min(index, Self.cardStaggerCap)) * Self.cardStaggerStep,
+                            animation: cardRevealAnimation
                         )
                     )
                 }
@@ -483,7 +539,8 @@ struct ClipboardPanelView: View {
                 )
             },
             selectedIndex: selection,
-            query: query
+            query: query,
+            generation: revealGeneration
         )
     }
 
@@ -505,4 +562,31 @@ struct ClipboardPanelView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+}
+
+/// 按位置级联的「浮现」：generation 变化 = 换了一份结果，卡片先瞬时归零再依次浮上来。
+///
+/// 为什么不用 .transition：HStack 里正在退场的卡片仍然占布局宽度，过滤前后两批并排
+/// 会把内容撑宽再缩回，加上 identity 复用的卡片从旧位置一路滑到新位置 —— 三种动画
+/// 叠在一起就是「先冒出一条旧记录、又被新记录推到后面」。
+/// 这里换成显式状态：数据替换不动画（瞬时，看不见推挤），只有浮现这一个方向有动画。
+private struct StaggeredReveal: ViewModifier {
+    let generation: Int
+    let delay: Double
+    let animation: Animation
+
+    @State private var shownGeneration = -1
+
+    func body(content: Content) -> some View {
+        let shown = shownGeneration == generation
+        content
+            .opacity(shown ? 1 : 0)
+            .scaleEffect(shown ? 1 : 0.96, anchor: .bottom)
+            .offset(y: shown ? 0 : 8)
+            // 归零那一下传 nil 不动画（否则会被外层的重排曲线拖成一次可见的淡出），
+            // 只给「浮现」方向排延迟
+            .animation(shown ? animation.delay(delay) : nil, value: shown)
+            .onAppear { shownGeneration = generation }
+            .onChange(of: generation) { shownGeneration = generation }
+    }
 }

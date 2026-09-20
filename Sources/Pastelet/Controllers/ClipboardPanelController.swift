@@ -103,8 +103,9 @@ final class ClipboardPanelController {
         animationToken += 1
         let token = animationToken
         panelState = .hiding
-        NotificationCenter.default.post(name: .pasteletPanelResetState, object: nil)
-
+        // 注意：不在这里重置内容。清搜索框、把时间线换回完整历史、滚动归位都是可见的
+        // 视觉变化，在淡出「之前」做会被看成「先变一下、再消失」的两步动画。
+        // 重置放到 animateContentLayerOut 的收尾里（面板已 orderOut，不可见时才改）。
         removeEventMonitors()
 
         animateContentLayerOut(panel, token: token)
@@ -341,6 +342,7 @@ final class ClipboardPanelController {
         guard let contentView = panel.contentView, let layer = contentView.layer else {
             panelState = .hidden
             panel.orderOut(nil)
+            NotificationCenter.default.post(name: .pasteletPanelResetState, object: nil)
             return
         }
 
@@ -359,6 +361,7 @@ final class ClipboardPanelController {
                 layer.opacity = 1
                 layer.transform = CATransform3DIdentity
                 self.panelState = .hidden
+                NotificationCenter.default.post(name: .pasteletPanelResetState, object: nil)
             }
         }
 

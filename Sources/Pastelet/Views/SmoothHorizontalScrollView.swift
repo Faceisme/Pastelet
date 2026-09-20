@@ -150,11 +150,33 @@ final class PasteletSmoothScrollView: NSScrollView {
         let maxX = max(0, width - viewportWidth)
         let currentX = contentView.bounds.origin.x
         let clampedX = min(max(0, currentX), maxX)
-        if clampedX != currentX {
+        guard clampedX != currentX else { return }
+
+        targetX = clampedX
+        // 过滤把内容变窄时这里会越界回弹。瞬移是「僵硬」感最重的一下：
+        // 卡片还在淡出，整条内容已经先被拽到左边了。滑回去，和卡片动画同时进行。
+        // currentX == 0 只可能是首次布局（没有「从哪来」），滚轮动画途中也有自己的目标，都不接管。
+        if currentX > 0, !isAnimatingWheel, window != nil {
+            animateBoundsOrigin(to: clampedX, duration: 0.26)
+        } else {
             contentView.setBoundsOrigin(NSPoint(x: clampedX, y: 0))
-            targetX = clampedX
             reflectScrolledClipView(contentView)
         }
+    }
+
+    /// 横向偏移动画：键盘定位、归位、越界回弹共用一条曲线，滚动手感才一致
+    private func animateBoundsOrigin(to x: CGFloat, duration: TimeInterval) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.92, 0.20, 1)
+            contentView.animator().setBoundsOrigin(NSPoint(x: x, y: 0))
+        } completionHandler: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.reflectScrolledClipView(self.contentView)
+            }
+        }
+        reflectScrolledClipView(contentView)
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -203,6 +225,8 @@ final class PasteletSmoothScrollView: NSScrollView {
         reflectScrolledClipView(contentView)
     }
 
+    /// 归位一律瞬时：调用这一刻卡片已被 StaggeredReveal 归零成透明，
+    /// 内容不可见，再让它可见地滑回开头只是多一层位移。
     func scrollToLeading() {
         targetX = 0
         isAnimatingWheel = false
@@ -228,16 +252,7 @@ final class PasteletSmoothScrollView: NSScrollView {
         let origin = NSPoint(x: target, y: 0)
 
         if animated {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.24
-                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.92, 0.20, 1)
-                contentView.animator().setBoundsOrigin(origin)
-            } completionHandler: { [weak self] in
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.reflectScrolledClipView(self.contentView)
-                }
-            }
+            animateBoundsOrigin(to: target, duration: 0.24)
         } else {
             contentView.setBoundsOrigin(origin)
             reflectScrolledClipView(contentView)
