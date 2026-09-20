@@ -171,7 +171,10 @@ struct ClipboardPanelView: View {
             GlassEffectView(
                 cornerRadius: panelCornerRadius,
                 tintColor: NSColor.windowBackgroundColor.withAlphaComponent(0.6),
-                style: .clear
+                style: .clear,
+                // macOS 27：玻璃跟随指针给反馈。卡片不透明、只有间隙和工具栏带露着玻璃，
+                // 反馈范围正好是「指针经过的空隙」，不会和卡片自己的 hover 打架
+                isInteractive: true
             )
             .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
             .overlay {
