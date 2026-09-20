@@ -40,18 +40,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardMonitor.flushAndWait()
     }
 
-    /// 跟随设置变化。AppSettings 用 Observation 宏，没有 Combine 的 $ 投影，
-    /// 改用 Observations 序列——它只在值真正变化时产出，
-    /// 原先 launchShortcut 靠 .dropFirst() 跳过订阅时的当前值，这里是免费的。
+    /// 跟随设置变化。AppSettings 用 Observation 宏，没有 Combine 的 $ 投影，改用 Observations 序列。
+    ///
+    /// 两处都要 dropFirst：Observations 在订阅建立时会先产出一次当前值，
+    /// 而这两件事 applicationDidFinishLaunching 里已经各自显式做过一遍了。
+    /// 尤其热键——重复跑一次 configureHotKey(showAlertOnFailure: true)，
+    /// 注册失败时会弹两次警告框。
     private func bindSettings() {
         Task { [weak self] in
-            for await _ in Observations({ _ = AppSettings.shared.hideMenuBarIcon }) {
+            for await _ in Observations({ _ = AppSettings.shared.hideMenuBarIcon }).dropFirst() {
                 self?.applyStatusItemVisibility()
             }
         }
 
         Task { [weak self] in
-            for await _ in Observations({ _ = AppSettings.shared.launchShortcut }) {
+            for await _ in Observations({ _ = AppSettings.shared.launchShortcut }).dropFirst() {
                 self?.configureHotKey(showAlertOnFailure: true)
             }
         }
