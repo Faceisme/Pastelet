@@ -3,8 +3,9 @@ import LinkPresentation
 import UniformTypeIdentifiers
 
 @MainActor
-final class ClipboardMonitor: ObservableObject {
-    @Published private(set) var items: [ClipboardItem] = []
+@Observable
+final class ClipboardMonitor {
+    private(set) var items: [ClipboardItem] = []
 
     private var timer: Timer?
     private var pruneTimer: Timer?

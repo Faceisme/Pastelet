@@ -18,7 +18,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
 struct SettingsView: View {
     var onClearHistory: () -> Void = {}
 
-    @ObservedObject private var settings = AppSettings.shared
+    @Bindable private var settings = AppSettings.shared
     @State private var selected: SettingsSection = .general
 
     var body: some View {

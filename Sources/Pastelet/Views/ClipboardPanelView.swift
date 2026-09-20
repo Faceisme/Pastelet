@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct ClipboardPanelView: View {
-    @ObservedObject var monitor: ClipboardMonitor
-    @ObservedObject private var settings = AppSettings.shared
+    let monitor: ClipboardMonitor
+    private let settings = AppSettings.shared
 
     let onSelect: (ClipboardItem) -> Void
     let onClear: () -> Void

@@ -1,5 +1,5 @@
 import AppKit
-import Combine
+import Observation
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -13,7 +13,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsController: SettingsWindowController?
     private var hotKeyManager: HotKeyManager?
     private var statusItem: NSStatusItem?
-    private var settingsCancellables: Set<AnyCancellable> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installEditMenu()
@@ -41,25 +40,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardMonitor.flushAndWait()
     }
 
+    /// 跟随设置变化。AppSettings 用 Observation 宏，没有 Combine 的 $ 投影，
+    /// 改用 Observations 序列——它只在值真正变化时产出，
+    /// 原先 launchShortcut 靠 .dropFirst() 跳过订阅时的当前值，这里是免费的。
     private func bindSettings() {
-        AppSettings.shared.$hideMenuBarIcon
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                Task { @MainActor in
-                    self?.applyStatusItemVisibility()
-                }
+        Task { [weak self] in
+            for await _ in Observations({ _ = AppSettings.shared.hideMenuBarIcon }) {
+                self?.applyStatusItemVisibility()
             }
-            .store(in: &settingsCancellables)
+        }
 
-        AppSettings.shared.$launchShortcut
-            .dropFirst()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                Task { @MainActor in
-                    self?.configureHotKey(showAlertOnFailure: true)
-                }
+        Task { [weak self] in
+            for await _ in Observations({ _ = AppSettings.shared.launchShortcut }) {
+                self?.configureHotKey(showAlertOnFailure: true)
             }
-            .store(in: &settingsCancellables)
+        }
     }
 
     private func configureHotKey(showAlertOnFailure: Bool) {

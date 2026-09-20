@@ -1,63 +1,70 @@
 import AppKit
 import Foundation
+import Observation
 import ServiceManagement
 
 /// 轻量设置存储（UserDefaults 持久化）。仅在主线程读写。
-final class AppSettings: ObservableObject, @unchecked Sendable {
+///
+/// 用 Observation 宏而不是旧的发布者模式：旧模式一有变化就让所有观察它的视图整体重绘——
+/// 面板只读 launchShortcut，却会因为「音效」这类无关开关连着 120 张卡片的时间线一起重画。
+/// Observation 按属性追踪，视图只在自己真正读过的属性变化时失效。
+/// 属性观察器（didSet）里的持久化照旧生效，宏会保留它。
+@Observable
+final class AppSettings: @unchecked Sendable {
     static let shared = AppSettings()
 
     /// 点击卡片后：true = 直接粘贴到当前活动 App；false = 仅复制回剪贴板
-    @Published var pasteToActiveApp: Bool {
+    var pasteToActiveApp: Bool {
         didSet { defaults.set(pasteToActiveApp, forKey: Keys.pasteToActiveApp) }
     }
 
     /// 始终以纯文本粘贴
-    @Published var alwaysPlainText: Bool {
+    var alwaysPlainText: Bool {
         didSet { defaults.set(alwaysPlainText, forKey: Keys.alwaysPlainText) }
     }
 
     /// 登录时自动启动（用 SMAppService 注册登录项）
-    @Published var openAtLogin: Bool {
+    var openAtLogin: Bool {
         didSet { applyLoginItem() }
     }
 
     /// 隐藏菜单栏图标；隐藏后仍可通过快捷键呼出面板。
-    @Published var hideMenuBarIcon: Bool {
+    var hideMenuBarIcon: Bool {
         didSet { defaults.set(hideMenuBarIcon, forKey: Keys.hideMenuBarIcon) }
     }
 
     /// 呼出主面板的全局快捷键；nil 表示禁用。
-    @Published var launchShortcut: PasteletKeyboardShortcut? {
+    var launchShortcut: PasteletKeyboardShortcut? {
         didSet { saveShortcut(launchShortcut, keyPrefix: Keys.launchShortcutPrefix) }
     }
 
     /// 面板内显示下一个项目。
-    @Published var nextItemShortcut: PasteletKeyboardShortcut? {
+    var nextItemShortcut: PasteletKeyboardShortcut? {
         didSet { saveShortcut(nextItemShortcut, keyPrefix: Keys.nextItemShortcutPrefix) }
     }
 
     /// 面板内显示上一个项目。
-    @Published var previousItemShortcut: PasteletKeyboardShortcut? {
+    var previousItemShortcut: PasteletKeyboardShortcut? {
         didSet { saveShortcut(previousItemShortcut, keyPrefix: Keys.previousItemShortcutPrefix) }
     }
 
     /// 快速粘贴使用的修饰键。
-    @Published var quickPasteModifier: PasteletModifierKey {
+    var quickPasteModifier: PasteletModifierKey {
         didSet { defaults.set(quickPasteModifier.rawValue, forKey: Keys.quickPasteModifier) }
     }
 
     /// 纯文本模式使用的修饰键。
-    @Published var plainTextModifier: PasteletModifierKey {
+    var plainTextModifier: PasteletModifierKey {
         didSet { defaults.set(plainTextModifier.rawValue, forKey: Keys.plainTextModifier) }
     }
 
     /// 复制/粘贴时播放音效
-    @Published var soundEnabled: Bool {
+    var soundEnabled: Bool {
         didSet { defaults.set(soundEnabled, forKey: Keys.soundEnabled) }
     }
 
     /// 历史保留档位：0=天 1=周 2=个月 3=年 4=永久
-    @Published var retentionIndex: Int {
+    var retentionIndex: Int {
         didSet { defaults.set(retentionIndex, forKey: Keys.retentionIndex) }
     }
 
